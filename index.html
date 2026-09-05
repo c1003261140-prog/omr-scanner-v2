@@ -3,188 +3,263 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OMR Escáner Multi-Examen</title>
+  <title>OMR Escáner Preciso</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 10px; background: #eef2f5; color: #333; }
-    .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 12px; }
-    h2 { font-size: 1.2rem; margin-top: 0; color: #1a73e8; }
-    label { font-weight: bold; display: block; margin-top: 8px; font-size: 0.9rem; }
-    select, input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 1rem; margin-top: 4px; }
-    video, canvas { width: 100%; max-height: 260px; object-fit: cover; border-radius: 8px; background: #000; }
-    button { width: 100%; padding: 12px; font-size: 1.05rem; font-weight: bold; background: #1a73e8; color: white; border: none; border-radius: 6px; margin-top: 10px; cursor: pointer; }
-    button:disabled { background: #9bbcf2; }
-    .res-box { display: none; background: #fff; padding: 15px; border-radius: 10px; border-left: 5px solid #28a745; margin-top: 12px; }
-    .badge { display: inline-block; padding: 3px 8px; background: #e8f0fe; color: #1a73e8; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
-    .error-list { color: #d93025; font-weight: bold; }
+    body { font-family: Arial, sans-serif; margin: 10px; background: #eef2f5; color: #222; }
+    .card { background: #fff; padding: 14px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
+    h2 { font-size: 1.1rem; margin-top: 0; color: #0d47a1; }
+    label { font-weight: bold; font-size: 0.85rem; display: block; margin-top: 6px; }
+    select, input { width: 100%; padding: 8px; border: 1px solid #aaa; border-radius: 4px; box-sizing: border-box; font-size: 0.95rem; margin-top: 3px; }
+    
+    /* Contenedor de cámara con visor guía */
+    .cam-container { position: relative; width: 100%; max-width: 400px; margin: 0 auto; overflow: hidden; border-radius: 8px; border: 2px solid #333; }
+    video { width: 100%; display: block; background: #000; }
+    .overlay-grid {
+      position: absolute; top: 10%; left: 15%; width: 70%; height: 80%;
+      border: 3px dashed #00e676; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+      pointer-events: none; border-radius: 6px;
+    }
+    .guide-text { position: absolute; bottom: 8px; left: 0; width: 100%; text-align: center; color: #fff; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+
+    button { width: 100%; padding: 12px; font-size: 1rem; font-weight: bold; background: #0d47a1; color: white; border: none; border-radius: 6px; margin-top: 8px; cursor: pointer; }
+    button:disabled { background: #90a4ae; cursor: not-allowed; }
+    
+    .alerta { background: #ffebee; color: #c62828; padding: 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; margin-top: 8px; display: none; }
+    .exito { background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 6px; margin-top: 8px; display: none; }
   </style>
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
 
   <div class="card">
-    <h2>1. Seleccionar Evaluación</h2>
-    <label for="selectExamen">Evaluaciones configuradas:</label>
-    <select id="selectExamen" onchange="actualizarInfoExamen()">
-      <option value="">Cargando exámenes de Google Sheets...</option>
+    <h2>1. Configuración de Evaluación</h2>
+    <label>Seleccionar Evaluación:</label>
+    <select id="selectExamen" onchange="cambiarExamen()">
+      <option value="">Cargando exámenes desde Google Sheets...</option>
     </select>
-    <div id="infoExamen" style="margin-top: 8px;"></div>
+    <div id="infoExamen" style="margin-top: 6px; font-size: 0.85rem; color: #555;"></div>
   </div>
 
   <div class="card">
-    <h2>2. Datos del Estudiante</h2>
-    <label for="numLista">N° de Lista:</label>
-    <input type="number" id="numLista" placeholder="Ej: 14" oninput="buscarEstudiante()">
-
-    <label for="nombreEstudiante">Nombre Completo:</label>
+    <h2>2. Identificación del Estudiante</h2>
+    <label>N° de Lista:</label>
+    <input type="number" id="numLista" placeholder="Ingresa N° (ej: 5)" oninput="autocompletarEstudiante()">
+    
+    <label>Nombre Completo:</label>
     <input type="text" id="nombreEstudiante" placeholder="Apellidos y Nombres">
   </div>
 
   <div class="card">
-    <h2>3. Escaneo OMR</h2>
-    <video id="camara" autoplay playsinline></video>
-    <button id="btnCalificar" onclick="escanearYGuardar()" disabled>Escanear y Calificar</button>
-    <canvas id="lienzo" style="display:none;"></canvas>
-  </div>
-
-  <div id="resBox" class="card res-box">
-    <h3 style="margin-top:0; color:#28a745;">¡Calificación Registrada!</h3>
-    <p id="resNota" style="font-size:1.3rem; font-weight:bold; margin: 5px 0;"></p>
-    <p id="resDetalle" style="margin:5px 0;"></p>
-    <p id="resFallos" class="error-list" style="margin:5px 0;"></p>
+    <h2>3. Alineación y Captura Óptica</h2>
+    <div class="cam-container">
+      <video id="camara" autoplay playsinline></video>
+      <div class="overlay-grid"></div>
+      <div class="guide-text">Encuadre la columna de burbujas en el recuadro verde</div>
+    </div>
+    
+    <button id="btnCalificar" onclick="procesarOMRReal()" disabled>Escanear y Evaluar</button>
+    <canvas id="lienzo" style="display: none;"></canvas>
+    
+    <div id="boxAlerta" class="alerta"></div>
+    
+    <div id="boxExito" class="exito">
+      <h3 style="margin: 0 0 4px 0;" id="txtNota"></h3>
+      <div id="txtEstudiante" style="font-weight: bold;"></div>
+      <div id="txtDetalle"></div>
+      <div id="txtObservaciones" style="color: #c62828; margin-top: 4px;"></div>
+    </div>
   </div>
 
   <script>
-    // PEGA AQUÍ TU URL /exec DE APPS SCRIPT:
+    // URL DE TU GOOGLE APPS SCRIPT:
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbysAuqYe2WCUaLYxmW8zjQEZOrGODtIPQOdFg-5ygoh43uEN0BdlZg5wZhq1VwFhV4D3A/exec";
 
     let dbExamenes = [];
     let dbEstudiantes = [];
     let examenActual = null;
     const video = document.getElementById('camara');
+    const canvas = document.getElementById('lienzo');
 
-    // Iniciar cámara trasera
+    // Inicializar Cámara
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
       .then(stream => { video.srcObject = stream; })
-      .catch(err => console.error("Cámara no disponible: " + err));
+      .catch(err => alert("Error al encender cámara: " + err));
 
-    // Cargar configuraciones de Google Sheets al iniciar
+    // Descargar datos de Sheets
     window.addEventListener('load', () => {
       fetch(SCRIPT_URL)
         .then(res => res.json())
         .then(data => {
           dbExamenes = data.examenes;
           dbEstudiantes = data.estudiantes;
-          const select = document.getElementById('selectExamen');
-          select.innerHTML = '<option value="">-- Elige un examen --</option>';
-
+          const sel = document.getElementById('selectExamen');
+          sel.innerHTML = '<option value="">-- Seleccione una evaluación --</option>';
           dbExamenes.forEach((ex, idx) => {
-            select.innerHTML += `<option value="${idx}">ID ${ex.id} | Curso: ${ex.curso} | ${ex.tema} (${ex.tipo})</option>`;
+            sel.innerHTML += `<option value="${idx}">ID ${ex.id} | ${ex.curso} | ${ex.tema} (${ex.tipo})</option>`;
           });
         })
-        .catch(err => {
-          document.getElementById('selectExamen').innerHTML = '<option>Error al conectar con Sheets</option>';
+        .catch(() => {
+          document.getElementById('selectExamen').innerHTML = '<option>Error cargando Sheets</option>';
         });
     });
 
-    function actualizarInfoExamen() {
+    function cambiarExamen() {
       const idx = document.getElementById('selectExamen').value;
-      const infoDiv = document.getElementById('infoExamen');
-      const btn = document.getElementById('btnCalificar');
-
       if (idx === "") {
         examenActual = null;
-        infoDiv.innerHTML = "";
-        btn.disabled = true;
+        document.getElementById('infoExamen').innerText = "";
+        validarFormulario();
         return;
       }
-
       examenActual = dbExamenes[idx];
-      infoDiv.innerHTML = `
-        <span class="badge">Curso: ${examenActual.curso}</span>
-        <span class="badge">Trimestre: ${examenActual.trimestre}</span>
-        <span class="badge">${examenActual.cant_preguntas} Preguntas</span>
-      `;
-      btn.disabled = false;
-      buscarEstudiante();
+      document.getElementById('infoExamen').innerHTML = 
+        `Curso: <b>${examenActual.curso}</b> | Trim: <b>${examenActual.trimestre}</b> | Preguntas: <b>${examenActual.cant_preguntas}</b> | Clave: <b>${examenActual.clave.join("-")}</b>`;
+      autocompletarEstudiante();
     }
 
-    // Autocompletar nombre si existe en la pestaña LISTA_ESTUDIANTES
-    function buscarEstudiante() {
+    function autocompletarEstudiante() {
       if (!examenActual) return;
       const nLista = document.getElementById('numLista').value.trim();
       const curso = examenActual.curso.trim().toUpperCase();
 
-      const encontrado = dbEstudiantes.find(e => e.curso === curso && e.n_lista === nLista);
-      if (encontrado) {
-        document.getElementById('nombreEstudiante').value = encontrado.nombre;
+      const alumno = dbEstudiantes.find(e => e.curso === curso && e.n_lista === nLista);
+      if (alumno) {
+        document.getElementById('nombreEstudiante').value = alumno.nombre;
       }
+      validarFormulario();
     }
 
-    function escanearYGuardar() {
-      if (!examenActual) return alert("Selecciona un examen primero.");
+    function validarFormulario() {
+      const nLista = document.getElementById('numLista').value.trim();
+      const nombre = document.getElementById('nombreEstudiante').value.trim();
+      document.getElementById('btnCalificar').disabled = !(examenActual && nLista !== "" && nombre !== "");
+    }
 
-      const nLista = document.getElementById('numLista').value || "S/N";
-      const nombreEst = document.getElementById('nombreEstudiante').value || "Sin Nombre";
-      const btn = document.getElementById('btnCalificar');
-      btn.disabled = true;
-      btn.innerText = "Procesando...";
+    document.getElementById('nombreEstudiante').addEventListener('input', validarFormulario);
 
-      // Simulación de lectura de las opciones marcadas en base a las preguntas configuradas
-      const letrasOpciones = ["A", "B", "C", "D", "E"].slice(0, parseInt(examenActual.opciones));
-      let respuestasMarcadas = [];
+    // ==========================================
+    // PROCESAMIENTO OMR CON DENSIDAD REAL DE PÍXELES
+    // ==========================================
+    function procesarOMRReal() {
+      const alerta = document.getElementById('boxAlerta');
+      const exito = document.getElementById('boxExito');
+      alerta.style.display = 'none';
+      exito.style.display = 'none';
+
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Zona de corte: coincide con la mirilla rectangular verde (15% a 85% horizontal, 10% a 90% vertical)
+      const cropX = canvas.width * 0.15;
+      const cropY = canvas.height * 0.10;
+      const cropW = canvas.width * 0.70;
+      const cropH = canvas.height * 0.80;
+
+      const imgData = ctx.getImageData(cropX, cropY, cropW, cropH);
+      const d = imgData.data;
+
+      const cantPreguntas = parseInt(examenActual.cant_preguntas);
+      const cantOpciones = parseInt(examenActual.opciones); // 4 opciones: A, B, C, D
+      const letras = ["A", "B", "C", "D", "E"].slice(0, cantOpciones);
+
+      let respuestasDetectadas = [];
+      let observaciones = [];
       let aciertos = 0;
       let incorrectas = [];
 
-      for (let i = 0; i < examenActual.cant_preguntas; i++) {
-        // En producción el umbral de OpenCV extrae la opción con mayor densidad
-        let opcionLeida = letrasOpciones[Math.floor(Math.random() * letrasOpciones.length)];
-        respuestasMarcadas.push(`P${i+1}:${opcionLeida}`);
+      // Mapeo por cuadrícula: divide el área verde en filas (preguntas) y columnas (opciones)
+      const pasoY = cropH / cantPreguntas;
+      const pasoX = cropW / cantOpciones;
 
-        if (opcionLeida === examenActual.clave[i]) {
-          aciertos++;
+      for (let p = 0; p < cantPreguntas; p++) {
+        let oscuridades = [];
+
+        for (let op = 0; op < cantOpciones; op++) {
+          // Coordenadas centrales de cada burbuja
+          const centroX = Math.floor(pasoX * op + pasoX / 2);
+          const centroY = Math.floor(pasoY * p + pasoY / 2);
+          const radioMuestreo = Math.floor(Math.min(pasoX, pasoY) * 0.22);
+
+          let pixelesNegros = 0;
+          let totalPixeles = 0;
+
+          // Analiza los píxeles dentro del radio de la burbuja
+          for (let y = centroY - radioMuestreo; y <= centroY + radioMuestreo; y++) {
+            for (let x = centroX - radioMuestreo; x <= centroX + radioMuestreo; x++) {
+              if (x >= 0 && x < cropW && y >= 0 && y < cropH) {
+                const idx = (y * Math.floor(cropW) + x) * 4;
+                // Luminosidad en escala de grises
+                const brillo = (d[idx] + d[idx + 1] + d[idx + 2]) / 3;
+                if (brillo < 110) { // Umbral de sombreado
+                  pixelesNegros++;
+                }
+                totalPixeles++;
+              }
+            }
+          }
+
+          const porcentajeOscuro = (pixelesNegros / totalPixeles) * 100;
+          oscuridades.push({ opcion: letras[op], densidad: porcentajeOscuro });
+        }
+
+        // Ordenar de mayor a menor sombreado
+        oscuridades.sort((a, b) => b.densidad - a.densidad);
+
+        const mejor = oscuridades[0];
+        const segunda = oscuridades[1];
+
+        // Validaciones de marcado
+        if (mejor.densidad < 25) { // No llega al mínimo de sombreado
+          respuestasDetectadas.push("BLANCO");
+          observaciones.push(`P${p + 1}: Sin marcar`);
+          incorrectas.push(`P${p + 1} (BLANCO / Era ${examenActual.clave[p]})`);
+        } else if ((mejor.densidad - segunda.densidad) < 12 && segunda.densidad > 22) { // Doble marca
+          respuestasDetectadas.push("DOBLE");
+          observaciones.push(`P${p + 1}: Doble marcación`);
+          incorrectas.push(`P${p + 1} (DOBLE / Era ${examenActual.clave[p]})`);
         } else {
-          incorrectas.push(`P${i+1} (Marcó ${opcionLeida} / Era ${examenActual.clave[i]})`);
+          respuestasDetectadas.push(mejor.opcion);
+          if (mejor.opcion === examenActual.clave[p]) {
+            aciertos++;
+          } else {
+            incorrectas.push(`P${p + 1} (Marcó ${mejor.opcion} / Era ${examenActual.clave[p]})`);
+          }
         }
       }
 
-      const total = parseInt(examenActual.cant_preguntas);
+      const total = cantPreguntas;
       const fallos = total - aciertos;
       const nota100 = ((aciertos * 100) / total).toFixed(1);
+      const nLista = document.getElementById('numLista').value.trim();
+      const nombreEst = document.getElementById('nombreEstudiante').value.trim();
 
-      // Enviar datos al Google Sheets
-      const payload = {
-        id_examen: examenActual.id,
-        curso: examenActual.curso,
-        n_lista: nLista,
-        nombre_estudiante: nombreEst,
-        tipo_evaluacion: examenActual.tipo,
-        trimestre: examenActual.trimestre,
-        aciertos: aciertos,
-        fallos: fallos,
-        total_preguntas: total,
-        nota_100: nota100,
-        respuestas_marcadas: respuestasMarcadas,
-        incorrectas: incorrectas
-      };
+      // Mostrar resultados en pantalla
+      exito.style.display = 'block';
+      document.getElementById('txtNota').innerText = `Nota: ${nota100} / 100 pts. (${aciertos}/${total})`;
+      document.getElementById('txtEstudiante').innerText = `${nombreEst} | N° Lista: ${nLista} | ${examenActual.curso}`;
+      document.getElementById('txtDetalle').innerText = `Marcadas: ${respuestasDetectadas.join(" - ")}`;
+      document.getElementById('txtObservaciones').innerText = observaciones.length > 0 ? "Obs: " + observaciones.join(", ") : "";
 
+      // Enviar a Google Sheets
       fetch(SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }).then(() => {
-        btn.disabled = false;
-        btn.innerText = "Escanear y Calificar Siguiente";
-
-        // Mostrar resultado en pantalla al profesor
-        document.getElementById('resBox').style.display = 'block';
-        document.getElementById('resNota').innerText = `Nota: ${nota100} / 100 pts. (${aciertos}/${total})`;
-        document.getElementById('resDetalle').innerText = `Estudiante: ${nombreEst} (N° ${nLista}) | Curso: ${examenActual.curso}`;
-        document.getElementById('resFallos').innerText = incorrectas.length > 0 ? "Errores: " + incorrectas.join(" | ") : "¡Examen Perfecto (100%)!";
-
-        // Preparar para el siguiente escaneo
-        document.getElementById('numLista').value = "";
-        document.getElementById('nombreEstudiante').value = "";
+        body: JSON.stringify({
+          id_examen: examenActual.id,
+          curso: examenActual.curso,
+          n_lista: nLista,
+          nombre_estudiante: nombreEst,
+          tipo_evaluacion: examenActual.tipo,
+          trimestre: examenActual.trimestre,
+          aciertos: aciertos,
+          fallos: fallos,
+          total_preguntas: total,
+          nota_100: nota100,
+          respuestas_marcadas: respuestasDetectadas,
+          incorrectas: incorrectas
+        })
       });
     }
   </script>
