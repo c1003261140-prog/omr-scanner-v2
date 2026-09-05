@@ -128,130 +128,131 @@
     // ESCANEO CON UMBRALIZACIÓN ADAPTATIVA (OTSU)
     // ==========================================
     function procesarEscaneoAdaptativo() {
-      const ctx = canvas.getContext('2d');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      let src = cv.imread(canvas);
-      let gray = new cv.Mat();
-      let thresh = new cv.Mat();
+  let src = cv.imread(canvas);
+  let gray = new cv.Mat();
+  let thresh = new cv.Mat();
 
-      // Escala de grises y Filtro Gaussiano para eliminar ruido de cámaras de baja resolución
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-      let ksize = new cv.Size(5, 5);
-      cv.GaussianBlur(gray, gray, ksize, 0, 0, cv.BORDER_DEFAULT);
+  // Escala de grises, reducción de ruido y binarización automática Otsu
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+  let ksize = new cv.Size(5, 5);
+  cv.GaussianBlur(gray, gray, ksize, 0, 0, cv.BORDER_DEFAULT);
+  cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-      // Algoritmo de Otsu: calcula el umbral según la iluminación real de la escena
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+  const cantEvaluadas = parseInt(examen.cant_preguntas); // Ej: 4 o 5 preguntas activas
+  const TOTAL_FILAS_IMPRESAS = 10; // La plantilla física siempre tiene 10 preguntas
+  const cantOp = parseInt(examen.opciones) || 4; // 4 opciones: A, B, C, D
+  const letras = ["A", "B", "C", "D", "E"].slice(0, cantOp);
 
-      const cantP = parseInt(examen.cant_preguntas);
-      const cantOp = parseInt(examen.opciones); // 4 opciones: A, B, C, D
-      const letras = ["A", "B", "C", "D", "E"].slice(0, cantOp);
+  let aciertos = 0;
+  let respuestasEstudiante = [];
+  let detalleHtml = "";
+  let listaErrores = [];
 
-      let aciertos = 0;
-      let respuestasEstudiante = [];
-      let detalleHtml = "";
-      let listaErrores = [];
+  // Delimitación del bloque OMR vertical (del 16% al 85% de la columna derecha)
+  const startY = Math.floor(canvas.height * 0.16);
+  const endY = Math.floor(canvas.height * 0.86);
+  const stepY = (endY - startY) / TOTAL_FILAS_IMPRESAS; // Se calcula siempre sobre 10 filas fijas
 
-      // Mapeo relativo dentro del recuadro OMR
-      const startY = Math.floor(canvas.height * 0.23);
-      const endY = Math.floor(canvas.height * 0.53);
-      const stepY = (endY - startY) / cantP;
+  const startX = Math.floor(canvas.width * 0.28);
+  const endX = Math.floor(canvas.width * 0.88);
+  const stepX = (endX - startX) / cantOp;
 
-      const startX = Math.floor(canvas.width * 0.28);
-      const endX = Math.floor(canvas.width * 0.88);
-      const stepX = (endX - startX) / cantOp;
+  // El bucle SOLO recorre la cantidad de preguntas configuradas para este examen
+  for (let p = 0; p < cantEvaluadas; p++) {
+    let conteos = [];
+    let cy = Math.floor(startY + stepY * p + stepY / 2);
 
-      for (let p = 0; p < cantP; p++) {
-        let conteos = [];
-        let cy = Math.floor(startY + stepY * p + stepY / 2);
+    for (let op = 0; op < cantOp; op++) {
+      let cx = Math.floor(startX + stepX * op + stepX / 2);
+      let radio = Math.floor(Math.min(stepX, stepY) * 0.28);
 
-        for (let op = 0; op < cantOp; op++) {
-          let cx = Math.floor(startX + stepX * op + stepX / 2);
-          let radio = Math.floor(Math.min(stepX, stepY) * 0.24);
+      let pixNegros = 0;
+      let totalPix = 0;
 
-          let pixNegros = 0;
-          let totalPix = 0;
-
-          for (let y = cy - radio; y <= cy + radio; y++) {
-            for (let x = cx - radio; x <= cx + radio; x++) {
-              if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
-                if (thresh.ucharPtr(y, x)[0] === 255) pixNegros++;
-                totalPix++;
-              }
-            }
+      for (let y = cy - radio; y <= cy + radio; y++) {
+        for (let x = cx - radio; x <= cx + radio; x++) {
+          if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
+            if (thresh.ucharPtr(y, x)[0] === 255) pixNegros++;
+            totalPix++;
           }
-          conteos.push({ letra: letras[op], densidad: pixNegros / totalPix });
-        }
-
-        // Ordenar por nivel de oscuridad
-        conteos.sort((a, b) => b.densidad - a.densidad);
-        const max = conteos[0];
-        const segundo = conteos[1];
-
-        let marcado = "BLANCO";
-        // Criterio adaptativo: la seleccionada debe superar claramente al fondo relativo
-        if (max.densidad > 0.22 && (max.densidad - segundo.densidad) > 0.08) {
-          marcado = max.letra;
-        }
-
-        respuestasEstudiante.push(`P${p+1}:${marcado}`);
-        const correcta = examen.clave[p];
-
-        if (marcado === correcta) {
-          aciertos++;
-          detalleHtml += `
-            <div class="item-resp ok">
-              <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b></span>
-              <span class="tag-ok">✔ Correcto</span>
-            </div>`;
-        } else {
-          listaErrores.push(`P${p+1} (Marcó ${marcado} / Era ${correcta})`);
-          detalleHtml += `
-            <div class="item-resp fail">
-              <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b> (Correcta: <b>${correcta}</b>)</span>
-              <span class="tag-bad">✖ Incorrecto</span>
-            </div>`;
         }
       }
-
-      const total = cantP;
-      const notaFinal = ((aciertos * 100) / total).toFixed(1);
-      const nl = document.getElementById('numLista').value.trim();
-      const nom = document.getElementById('nombreEstudiante').value.trim();
-
-      // Renderizar resultados en pantalla
-      const panel = document.getElementById('resPanel');
-      panel.style.display = 'block';
-      document.getElementById('txtScore').innerHTML = `Nota: <span class="${aciertos === total ? 'tag-ok' : 'tag-bad'}">${notaFinal} / 100</span> (${aciertos}/${total})`;
-      document.getElementById('txtEstudianteInfo').innerText = `${nom} | N° Lista: ${nl} | Curso: ${examen.curso} | FILA: ${examen.fila}`;
-      document.getElementById('gridRespuestas').innerHTML = detalleHtml;
-
-      // Enviar a Google Sheets
-      fetch(SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id_examen: examen.id,
-          curso: examen.curso,
-          fila: examen.fila,
-          n_lista: nl,
-          nombre_estudiante: nom,
-          tipo_evaluacion: examen.tipo,
-          trimestre: examen.trimestre,
-          aciertos: aciertos,
-          fallos: total - aciertos,
-          total_preguntas: total,
-          nota_100: notaFinal,
-          desglose_completo: respuestasEstudiante.join(" | "),
-          detalle_errores: listaErrores.length > 0 ? listaErrores.join(", ") : "Sin errores"
-        })
-      });
-
-      src.delete(); gray.delete(); thresh.delete();
+      conteos.push({ letra: letras[op], densidad: pixNegros / totalPix });
     }
+
+    // Ordenar de mayor a menor densidad relativa
+    conteos.sort((a, b) => b.densidad - a.densidad);
+    const max = conteos[0];
+    const segundo = conteos[1];
+
+    let marcado = "BLANCO";
+    if (max.densidad > 0.20 && (max.densidad - segundo.densidad) > 0.07) {
+      marcado = max.letra;
+    }
+
+    respuestasEstudiante.push(`P${p+1}:${marcado}`);
+    const correcta = examen.clave[p];
+
+    if (marcado === correcta) {
+      aciertos++;
+      detalleHtml += `
+        <div class="item-resp ok">
+          <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b></span>
+          <span class="tag-ok">✔ Correcto</span>
+        </div>`;
+    } else {
+      listaErrores.push(`P${p+1} (Marcó ${marcado} / Era ${correcta})`);
+      detalleHtml += `
+        <div class="item-resp fail">
+          <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b> (Correcta: <b>${correcta}</b>)</span>
+          <span class="tag-bad">✖ Incorrecto</span>
+        </div>`;
+    }
+  }
+
+  // Nota calculada exclusivamente sobre las preguntas activas
+  const notaFinal = ((aciertos * 100) / cantEvaluadas).toFixed(1);
+  const nl = document.getElementById('numLista').value.trim();
+  const nom = document.getElementById('nombreEstudiante').value.trim();
+
+  // Mostrar en interfaz
+  const panel = document.getElementById('resPanel');
+  panel.style.display = 'block';
+  document.getElementById('txtScore').innerHTML = 
+    `Nota: <span class="${aciertos === cantEvaluadas ? 'tag-ok' : 'tag-bad'}">${notaFinal} / 100</span> (${aciertos}/${cantEvaluadas})`;
+  document.getElementById('txtEstudianteInfo').innerText = 
+    `${nom} | N° Lista: ${nl} | Curso: ${examen.curso} | FILA: ${examen.fila} (Evaluadas: ${cantEvaluadas} de 10)`;
+  document.getElementById('gridRespuestas').innerHTML = detalleHtml;
+
+  // Enviar a Google Sheets
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id_examen: examen.id,
+      curso: examen.curso,
+      fila: examen.fila,
+      n_lista: nl,
+      nombre_estudiante: nom,
+      tipo_evaluacion: examen.tipo,
+      trimestre: examen.trimestre,
+      aciertos: aciertos,
+      fallos: cantEvaluadas - aciertos,
+      total_preguntas: cantEvaluadas,
+      nota_100: notaFinal,
+      desglose_completo: respuestasEstudiante.join(" | "),
+      detalle_errores: listaErrores.length > 0 ? listaErrores.join(", ") : "Sin errores"
+    })
+  });
+
+  src.delete(); gray.delete(); thresh.delete();
+}
   </script>
 </body>
 </html>
