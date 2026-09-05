@@ -3,92 +3,89 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Escáner OMR Autónomo</title>
+  <title>OMR Escáner Fila A/B y Adaptabilidad de Luz</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 10px; background: #eceff1; color: #263238; }
-    .card { background: #fff; padding: 14px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 10px; }
-    h2 { font-size: 1.1rem; margin: 0 0 8px 0; color: #1565c0; }
-    label { font-weight: bold; font-size: 0.85rem; display: block; margin-top: 6px; }
-    select, input { width: 100%; padding: 8px; border: 1px solid #b0bec5; border-radius: 4px; box-sizing: border-box; font-size: 0.95rem; margin-top: 2px; }
+    body { font-family: Arial, sans-serif; margin: 8px; background: #eef1f5; color: #212529; }
+    .card { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); margin-bottom: 8px; }
+    h2 { font-size: 1.05rem; margin: 0 0 6px 0; color: #0b5ed7; }
+    label { font-weight: bold; font-size: 0.8rem; display: block; margin-top: 4px; }
+    select, input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; font-size: 0.95rem; }
     
-    .cam-box { position: relative; width: 100%; max-width: 420px; margin: 0 auto; overflow: hidden; border-radius: 6px; background: #000; }
+    .cam-box { position: relative; width: 100%; max-width: 400px; margin: 0 auto; overflow: hidden; border-radius: 6px; background: #000; }
     video { width: 100%; display: block; }
     .guide-box {
-      position: absolute; top: 5%; left: 5%; width: 90%; height: 90%;
-      border: 2px solid rgba(0, 230, 118, 0.8); pointer-events: none;
-      box-sizing: border-box;
+      position: absolute; top: 4%; left: 8%; width: 84%; height: 92%;
+      border: 2px dashed #00e676; box-sizing: border-box; pointer-events: none;
     }
-    .guide-hint {
-      position: absolute; top: 10px; left: 0; width: 100%; text-align: center;
-      color: #fff; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 2px #000;
-    }
-
-    button { width: 100%; padding: 12px; font-size: 1rem; font-weight: bold; background: #1565c0; color: white; border: none; border-radius: 6px; margin-top: 10px; cursor: pointer; }
-    button:disabled { background: #90a4ae; }
     
-    .panel-res { display: none; background: #e8f5e9; border: 1px solid #81c784; padding: 12px; border-radius: 6px; margin-top: 10px; }
-    .error-tag { color: #d32f2f; font-weight: bold; }
+    button { width: 100%; padding: 12px; font-size: 1rem; font-weight: bold; background: #0b5ed7; color: white; border: none; border-radius: 6px; margin-top: 8px; cursor: pointer; }
+    button:disabled { background: #6c757d; }
+
+    /* Desglose de resultados */
+    .res-panel { display: none; margin-top: 10px; padding: 12px; border-radius: 6px; background: #fff; border: 1px solid #dee2e6; }
+    .score-badge { font-size: 1.3rem; font-weight: bold; margin-bottom: 6px; }
+    .tag-ok { color: #198754; font-weight: bold; }
+    .tag-bad { color: #dc3545; font-weight: bold; }
+    
+    .grid-correlativo { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 0.9rem; }
+    .item-resp { padding: 5px 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .item-resp.ok { background: #d1e7dd; border-left: 4px solid #198754; }
+    .item-resp.fail { background: #f8d7da; border-left: 4px solid #dc3545; }
   </style>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="cvListo()"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
 
   <div class="card">
-    <h2>1. Examen y Alumno</h2>
-    <label>Evaluación:</label>
-    <select id="selectExamen" onchange="seleccionarExamen()">
-      <option value="">Cargando datos desde Sheets...</option>
+    <h2>1. Selección de Evaluación y Fila</h2>
+    <label>Examen / Tema / Fila:</label>
+    <select id="selectExamen" onchange="cambiarExamen()">
+      <option value="">Cargando evaluaciones...</option>
     </select>
-    
+
     <div style="display: flex; gap: 8px; margin-top: 6px;">
       <div style="flex: 1;">
         <label>N° Lista:</label>
-        <input type="number" id="numLista" placeholder="5" oninput="completarAlumno()">
+        <input type="number" id="numLista" placeholder="5" oninput="completarEstudiante()">
       </div>
       <div style="flex: 2;">
-        <label>Nombre:</label>
-        <input type="text" id="nombreAlumno" placeholder="LOPEZ PEREZ MARIA">
+        <label>Estudiante:</label>
+        <input type="text" id="nombreEstudiante" placeholder="Nombre completo">
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>2. Cámara de Corrección</h2>
+    <h2>2. Escaneo con Calibración de Luz</h2>
     <div class="cam-box">
       <video id="camara" autoplay playsinline></video>
       <div class="guide-box"></div>
-      <div class="guide-hint">Apunte a los 4 cuadros negros de las esquinas</div>
     </div>
-    <button id="btnEscanear" onclick="procesarEscaneo()" disabled>Escanear Hoja de Respuestas</button>
+    <button id="btnCalificar" onclick="procesarEscaneoAdaptativo()" disabled>Escanear Hoja</button>
     <canvas id="lienzo" style="display:none;"></canvas>
 
-    <div id="panelResultado" class="panel-res">
-      <h3 id="txtNota" style="margin:0 0 6px 0; color:#2e7d32;"></h3>
-      <div id="txtAlumno" style="font-size:0.9rem;"></div>
-      <div id="txtLectura" style="font-weight:bold; margin-top:4px;"></div>
-      <div id="txtDetalle" class="error-tag" style="margin-top:4px;"></div>
+    <div id="resPanel" class="res-panel">
+      <div id="txtScore" class="score-badge"></div>
+      <div id="txtEstudianteInfo" style="font-size: 0.85rem; color: #555;"></div>
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
+      <div style="font-weight: bold; font-size: 0.85rem; margin-bottom: 4px;">Detalle Correlativo:</div>
+      <div id="gridRespuestas" class="grid-correlativo"></div>
     </div>
   </div>
 
   <script>
+    // URL DE TU APPS SCRIPT:
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbysAuqYe2WCUaLYxmW8zjQEZOrGODtIPQOdFg-5ygoh43uEN0BdlZg5wZhq1VwFhV4D3A/exec";
 
     let dbExamenes = [];
     let dbEstudiantes = [];
     let examen = null;
-    let openCvCargado = false;
-
-    function cvListo() {
-      openCvCargado = true;
-      console.log("OpenCV.js listo para procesar visión artificial.");
-    }
-
     const video = document.getElementById('camara');
     const canvas = document.getElementById('lienzo');
 
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(s => { video.srcObject = s; })
-      .catch(e => alert("Error al acceder a la cámara: " + e));
+      .then(s => video.srcObject = s)
+      .catch(e => alert("Permiso de cámara denegado."));
 
     window.addEventListener('load', () => {
       fetch(SCRIPT_URL)
@@ -97,44 +94,40 @@
           dbExamenes = d.examenes;
           dbEstudiantes = d.estudiantes;
           const s = document.getElementById('selectExamen');
-          s.innerHTML = '<option value="">-- Seleccionar Examen --</option>';
+          s.innerHTML = '<option value="">-- Seleccione una evaluación --</option>';
           dbExamenes.forEach((ex, i) => {
-            s.innerHTML += `<option value="${i}">ID ${ex.id} - ${ex.curso} - ${ex.tema}</option>`;
+            s.innerHTML += `<option value="${i}">ID ${ex.id} | Curso: ${ex.curso} | FILA ${ex.fila} - ${ex.tema}</option>`;
           });
         });
     });
 
-    function seleccionarExamen() {
-      const idx = document.getElementById('selectExamen').value;
-      if (idx === "") { examen = null; verificarBoton(); return; }
-      examen = dbExamenes[idx];
-      completarAlumno();
+    function cambiarExamen() {
+      const i = document.getElementById('selectExamen').value;
+      if (i === "") { examen = null; verificarBtn(); return; }
+      examen = dbExamenes[i];
+      completarEstudiante();
     }
 
-    function completarAlumno() {
+    function completarEstudiante() {
       if (!examen) return;
       const nl = document.getElementById('numLista').value.trim();
       const curso = examen.curso.trim().toUpperCase();
       const match = dbEstudiantes.find(e => e.curso === curso && e.n_lista === nl);
-      if (match) {
-        document.getElementById('nombreAlumno').value = match.nombre;
-      }
-      verificarBoton();
+      if (match) document.getElementById('nombreEstudiante').value = match.nombre;
+      verificarBtn();
     }
 
-    function verificarBoton() {
-      const ok = examen && document.getElementById('numLista').value.trim() !== "" && document.getElementById('nombreAlumno').value.trim() !== "";
-      document.getElementById('btnEscanear').disabled = !ok;
+    function verificarBtn() {
+      const ok = examen && document.getElementById('numLista').value.trim() !== "" && document.getElementById('nombreEstudiante').value.trim() !== "";
+      document.getElementById('btnCalificar').disabled = !ok;
     }
 
-    document.getElementById('nombreAlumno').addEventListener('input', verificarBoton);
+    document.getElementById('nombreEstudiante').addEventListener('input', verificarBtn);
 
     // ==========================================
-    // PROCESAMIENTO OMR CON DETECCIÓN DE ESQUINAS
+    // ESCANEO CON UMBRALIZACIÓN ADAPTATIVA (OTSU)
     // ==========================================
-    function procesarEscaneo() {
-      if (!openCvCargado) return alert("Cargando motor de visión... espere 2 segundos.");
-      
+    function procesarEscaneoAdaptativo() {
       const ctx = canvas.getContext('2d');
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
@@ -144,85 +137,96 @@
       let gray = new cv.Mat();
       let thresh = new cv.Mat();
 
-      // Convertir a escala de grises y binarizar
+      // Escala de grises y Filtro Gaussiano para eliminar ruido de cámaras de baja resolución
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-      cv.threshold(gray, thresh, 110, 255, cv.THRESH_BINARY_INV);
+      let ksize = new cv.Size(5, 5);
+      cv.GaussianBlur(gray, gray, ksize, 0, 0, cv.BORDER_DEFAULT);
 
-      // Coordenadas relativas calibradas sobre la imagen de la evaluación:
-      // La cuadrícula de 4 preguntas está en:
-      // Y: del 23% al 48% de la columna OMR
-      // X: del 28% al 90% (burbujas A, B, C, D)
-      const cantP = parseInt(examen.cant_preguntas); // 4
-      const cantOp = 4; // A, B, C, D
-      const letras = ["A", "B", "C", "D"];
+      // Algoritmo de Otsu: calcula el umbral según la iluminación real de la escena
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-      let respuestas = [];
+      const cantP = parseInt(examen.cant_preguntas);
+      const cantOp = parseInt(examen.opciones); // 4 opciones: A, B, C, D
+      const letras = ["A", "B", "C", "D", "E"].slice(0, cantOp);
+
       let aciertos = 0;
-      let errados = [];
+      let respuestasEstudiante = [];
+      let detalleHtml = "";
+      let listaErrores = [];
 
-      // Muestreo dinámico de círculos
-      const startY = Math.floor(canvas.height * 0.22);
-      const endY = Math.floor(canvas.height * 0.52);
+      // Mapeo relativo dentro del recuadro OMR
+      const startY = Math.floor(canvas.height * 0.23);
+      const endY = Math.floor(canvas.height * 0.53);
       const stepY = (endY - startY) / cantP;
 
-      const startX = Math.floor(canvas.width * 0.26);
+      const startX = Math.floor(canvas.width * 0.28);
       const endX = Math.floor(canvas.width * 0.88);
       const stepX = (endX - startX) / cantOp;
 
       for (let p = 0; p < cantP; p++) {
-        let maxNegros = -1;
-        let opcionElegida = "BLANCO";
+        let conteos = [];
+        let cy = Math.floor(startY + stepY * p + stepY / 2);
 
         for (let op = 0; op < cantOp; op++) {
           let cx = Math.floor(startX + stepX * op + stepX / 2);
-          let cy = Math.floor(startY + stepY * p + stepY / 2);
-          let radio = Math.floor(Math.min(stepX, stepY) * 0.25);
+          let radio = Math.floor(Math.min(stepX, stepY) * 0.24);
 
-          // Contar densidad en el círculo
           let pixNegros = 0;
+          let totalPix = 0;
+
           for (let y = cy - radio; y <= cy + radio; y++) {
             for (let x = cx - radio; x <= cx + radio; x++) {
               if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
-                if (thresh.ucharPtr(y, x)[0] === 255) {
-                  pixNegros++;
-                }
+                if (thresh.ucharPtr(y, x)[0] === 255) pixNegros++;
+                totalPix++;
               }
             }
           }
-
-          // La burbuja sombreada supera holgadamente a las vacías
-          if (pixNegros > maxNegros) {
-            maxNegros = pixNegros;
-            opcionElegida = letras[op];
-          }
+          conteos.push({ letra: letras[op], densidad: pixNegros / totalPix });
         }
 
-        // Filtro de marcado mínimo (si apenas hay píxeles, está en blanco)
-        if (maxNegros < 40) {
-          opcionElegida = "BLANCO";
-          errados.push(`P${p+1} (BLANCO / Era ${examen.clave[p]})`);
+        // Ordenar por nivel de oscuridad
+        conteos.sort((a, b) => b.densidad - a.densidad);
+        const max = conteos[0];
+        const segundo = conteos[1];
+
+        let marcado = "BLANCO";
+        // Criterio adaptativo: la seleccionada debe superar claramente al fondo relativo
+        if (max.densidad > 0.22 && (max.densidad - segundo.densidad) > 0.08) {
+          marcado = max.letra;
+        }
+
+        respuestasEstudiante.push(`P${p+1}:${marcado}`);
+        const correcta = examen.clave[p];
+
+        if (marcado === correcta) {
+          aciertos++;
+          detalleHtml += `
+            <div class="item-resp ok">
+              <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b></span>
+              <span class="tag-ok">✔ Correcto</span>
+            </div>`;
         } else {
-          if (opcionElegida === examen.clave[p]) {
-            aciertos++;
-          } else {
-            errados.push(`P${p+1} (Marcó ${opcionElegida} / Era ${examen.clave[p]})`);
-          }
+          listaErrores.push(`P${p+1} (Marcó ${marcado} / Era ${correcta})`);
+          detalleHtml += `
+            <div class="item-resp fail">
+              <span><b>Pregunta ${p+1}:</b> Marcó <b>${marcado}</b> (Correcta: <b>${correcta}</b>)</span>
+              <span class="tag-bad">✖ Incorrecto</span>
+            </div>`;
         }
-        respuestas.push(opcionElegida);
       }
 
-      // Cálculo de nota
-      const notaFinal = ((aciertos * 100) / cantP).toFixed(1);
+      const total = cantP;
+      const notaFinal = ((aciertos * 100) / total).toFixed(1);
       const nl = document.getElementById('numLista').value.trim();
-      const nom = document.getElementById('nombreAlumno').value.trim();
+      const nom = document.getElementById('nombreEstudiante').value.trim();
 
-      // Mostrar en pantalla
-      const panel = document.getElementById('panelResultado');
+      // Renderizar resultados en pantalla
+      const panel = document.getElementById('resPanel');
       panel.style.display = 'block';
-      document.getElementById('txtNota').innerText = `Nota: ${notaFinal} / 100 (${aciertos}/${cantP})`;
-      document.getElementById('txtAlumno').innerText = `Estudiante: ${nom} | N°: ${nl}`;
-      document.getElementById('txtLectura').innerText = `Respuestas leídas: ${respuestas.join(" - ")}`;
-      document.getElementById('txtDetalle').innerText = errados.length > 0 ? "Observaciones: " + errados.join(" | ") : "¡Examen con 100% de aciertos!";
+      document.getElementById('txtScore').innerHTML = `Nota: <span class="${aciertos === total ? 'tag-ok' : 'tag-bad'}">${notaFinal} / 100</span> (${aciertos}/${total})`;
+      document.getElementById('txtEstudianteInfo').innerText = `${nom} | N° Lista: ${nl} | Curso: ${examen.curso} | FILA: ${examen.fila}`;
+      document.getElementById('gridRespuestas').innerHTML = detalleHtml;
 
       // Enviar a Google Sheets
       fetch(SCRIPT_URL, {
@@ -232,20 +236,20 @@
         body: JSON.stringify({
           id_examen: examen.id,
           curso: examen.curso,
+          fila: examen.fila,
           n_lista: nl,
           nombre_estudiante: nom,
           tipo_evaluacion: examen.tipo,
           trimestre: examen.trimestre,
           aciertos: aciertos,
-          fallos: cantP - aciertos,
-          total_preguntas: cantP,
+          fallos: total - aciertos,
+          total_preguntas: total,
           nota_100: notaFinal,
-          respuestas_marcadas: respuestas,
-          incorrectas: errados
+          desglose_completo: respuestasEstudiante.join(" | "),
+          detalle_errores: listaErrores.length > 0 ? listaErrores.join(", ") : "Sin errores"
         })
       });
 
-      // Liberar matrices de OpenCV
       src.delete(); gray.delete(); thresh.delete();
     }
   </script>
