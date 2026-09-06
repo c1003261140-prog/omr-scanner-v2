@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Studio Edit & Empty Bubbles</title>
+  <title>OMR Scanner Pro - Malla Rígida Central</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -19,7 +19,7 @@
 
     .btn { padding: 14px; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 10px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
     .btn:active { transform: scale(0.97); }
-    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-blue { background: #0284c7; border: 2px solid #0369a1; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; border: 2px solid #3b82f6; }
     video { width: 100%; height: 100%; object-fit: cover; }
@@ -34,7 +34,7 @@
     .filter-row label { font-size: 0.8rem; color: #94a3b8; width: 60px; font-weight: bold;}
     .filter-row input[type=range] { flex: 1; margin: 0 10px; accent-color: #3b82f6; }
     .filter-row span { font-size: 0.8rem; color: #f8fafc; width: 30px; text-align: right; }
-    .preview-bw { width: 100%; height: 100px; background: #000; border: 1px solid #334155; border-radius: 6px; object-fit: cover; margin-top: 5px; }
+    .preview-bw { width: 100%; height: 120px; background: #000; border: 1px solid #334155; border-radius: 6px; object-fit: cover; margin-top: 5px; }
 
     #manualEditor { background: #1e293b; padding: 14px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #10b981; }
     .editor-title { font-size: 0.95rem; font-weight: bold; color: #f8fafc; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #334155; padding-bottom: 5px; }
@@ -80,6 +80,8 @@
   <!-- PANEL 2: FOTOGRAFÍA ESTÁTICA -->
   <div id="panel-camera" class="panel">
     <div class="info-text">Paso 1: Encuadre toda la hoja y capture.</div>
+    <button id="btnModo" class="btn btn-blue" onclick="toggleModo()">Modo Lectura: 📄 PAPEL</button>
+    
     <div class="camera-wrapper">
       <video id="videoElement" autoplay playsinline></video>
     </div>
@@ -87,9 +89,10 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: ENCUADRE INTERACTIVO -->
+  <!-- PANEL 3: ENCUADRE INTERACTIVO MULTIPUNTO -->
   <div id="panel-crop" class="panel">
-    <div class="info-text" style="color: #38bdf8;">Paso 2: Arrastre el área azul sobre la Hoja de Respuestas.</div>
+    <div class="info-text" style="color: #38bdf8;">Paso 2: Arrastre el área azul a los bordes de la cuadrícula.</div>
+    <div style="font-size:0.8rem; text-align:center; margin-bottom:10px; color:#94a3b8;">*Puede arrastrar del centro para mover todo el cuadro.</div>
     <div class="crop-stage" id="cropStage">
       <canvas id="cropCanvas"></canvas>
     </div>
@@ -97,30 +100,20 @@
     <button class="btn btn-danger" onclick="reintentarCamara()">🔄 Volver a Tomar Foto</button>
   </div>
 
-  <!-- PANEL 4: ESTUDIO DE IMAGEN Y EDICIÓN -->
+  <!-- PANEL 4: ESTUDIO B/N, RESULTADOS Y EDICIÓN -->
   <div id="panel-review" class="panel">
     
     <!-- Visor de Binarización -->
     <div class="filter-panel">
-      <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">CONTROLES DE VISIÓN ARTIFICIAL (B/N)</div>
+      <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">VISOR DE LECTURA (B/N)</div>
+      <div class="filter-row"><label>Brillo</label><input type="range" id="slBrillo" min="-100" max="100" value="0" oninput="aplicarFiltrosBinarizacion()"><span id="valBrillo">0</span></div>
+      <div class="filter-row"><label>Contraste</label><input type="range" id="slContraste" min="10" max="40" value="10" oninput="aplicarFiltrosBinarizacion()"><span id="valContraste">1.0</span></div>
       
-      <div class="filter-row">
-        <label>Brillo</label>
-        <input type="range" id="slBrillo" min="-100" max="100" value="0" oninput="aplicarFiltrosBinarizacion()">
-        <span id="valBrillo">0</span>
-      </div>
-      <div class="filter-row">
-        <label>Contraste</label>
-        <input type="range" id="slContraste" min="10" max="30" value="10" oninput="aplicarFiltrosBinarizacion()">
-        <span id="valContraste">1.0</span>
-      </div>
-      <div class="filter-row">
-        <label>Umbral</label>
-        <input type="range" id="slUmbral" min="50" max="250" value="180" oninput="aplicarFiltrosBinarizacion()">
-        <span id="valUmbral">180</span>
-      </div>
+      <!-- UMBRAL MÁS SENSIBLE POR DEFECTO PARA LÁPIZ SUAVE -->
+      <div class="filter-row"><label>Lápiz</label><input type="range" id="slUmbral" min="150" max="250" value="220" oninput="aplicarFiltrosBinarizacion()"><span id="valUmbral">220</span></div>
+      <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:2px;">(Hacia la derecha detecta lápiz más suave)</div>
+      
       <canvas id="bwCanvasPreview" class="preview-bw"></canvas>
-      <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:4px;">Ajuste hasta ver manchas blancas puras sobre fondo negro.</div>
     </div>
 
     <!-- Fotografía Final con Nota -->
@@ -155,19 +148,24 @@
     let bwCanvas = document.getElementById('bwCanvasPreview'); let bwCtx = bwCanvas.getContext('2d');
     
     let stream = null; let opencvReady = false; let userPin = "";
-    let capturedImage = null; // Foto original guardada
-    let warpedMatBase = null; // Recorte a color original
+    let capturedImage = null; let warpedMatBase = null; 
     let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     let arregloRespuestasManuales = [];
 
     // Lógica del Recuadro de Recorte
-    let corners = []; 
-    let activeHandle = null; 
-    let dragOffset = {x:0, y:0};
+    let corners = []; let activeHandle = null; let dragOffset = {x:0, y:0};
+    let modoPantalla = false;
 
     function onOpenCvReady() { opencvReady = true; }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3000); }
     function switchPanel(pid) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(pid).classList.add('active'); window.scrollTo(0,0); }
+
+    function toggleModo() {
+      modoPantalla = !modoPantalla;
+      let btn = document.getElementById('btnModo');
+      if (modoPantalla) { btn.innerText = "Modo Lectura: 💻 PANTALLA LED"; btn.style.background = "#ea580c"; btn.style.borderColor = "#c2410c"; showNotif("Filtro Pantalla Activado", "#ea580c"); } 
+      else { btn.innerText = "Modo Lectura: 📄 PAPEL"; btn.style.background = "#0284c7"; btn.style.borderColor = "#0369a1"; showNotif("Filtro Normal Activado"); }
+    }
 
     window.onload = () => { let savedPin = localStorage.getItem("omr_pin"); if(savedPin) { document.getElementById("inputPin").value = savedPin; } };
 
@@ -176,17 +174,14 @@
       if (!pin) { alert("Por favor, ingrese un PIN"); return; }
       document.getElementById("btnLogin").innerText = "⏳ Verificando..."; document.getElementById("btnLogin").classList.add("btn-disabled");
       try {
-        let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); 
-        let data = await response.json();
-        if (data.status === "error") {
-          alert(data.message); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); return;
-        }
+        let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); let data = await response.json();
+        if (data.status === "error") { alert(data.message); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); return; }
         userPin = pin; localStorage.setItem("omr_pin", pin);
         dbExamenes = data.examenes; dbEstudiantes = data.estudiantes;
         let selEx = document.getElementById('selExamen'); selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
         document.getElementById('selectionCard').style.display = 'block'; switchPanel('panel-config'); showNotif("✅ Acceso Concedido");
-      } catch (err) { alert("Error de conexión. Revise su internet o la URL del script."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
+      } catch (err) { alert("Error de conexión."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
     }
 
     function cerrarSesion() { userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = ""; document.getElementById("selectionCard").style.display = "none"; switchPanel("panel-login"); }
@@ -204,8 +199,7 @@
     async function abrirCamara() {
       switchPanel('panel-camera');
       const constraints = { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } };
-      try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } 
-      catch (err) { alert("Permita acceso a la cámara."); }
+      try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } catch (err) { alert("Permita acceso a la cámara."); }
     }
 
     function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
@@ -216,26 +210,19 @@
     // PASO 1: FOTO FIJA
     function capturarFotoFija() {
       capturedImage = document.createElement('canvas');
-      capturedImage.width = video.videoWidth; 
-      capturedImage.height = video.videoHeight;
+      capturedImage.width = video.videoWidth; capturedImage.height = video.videoHeight;
       capturedImage.getContext('2d').drawImage(video, 0, 0);
-      detenerCamara();
-      iniciarEtapaEncuadre();
+      detenerCamara(); iniciarEtapaEncuadre();
     }
 
-    // PASO 2: ENCUADRE INTERACTIVO TIPO CAMSCANNER
+    // PASO 2: ENCUADRE INTERACTIVO (CamScanner)
     function iniciarEtapaEncuadre() {
       switchPanel('panel-crop');
-      cropCanvas.width = cropCanvas.clientWidth;
-      cropCanvas.height = cropCanvas.clientHeight;
-
+      cropCanvas.width = cropCanvas.clientWidth; cropCanvas.height = cropCanvas.clientHeight;
       let w = cropCanvas.width; let h = cropCanvas.height;
-      // Posición inicial: El lado derecho entero donde está la OMR
       corners = [
-        { x: w * 0.58, y: h * 0.12 }, // Superior Izquierda
-        { x: w * 0.96, y: h * 0.12 }, // Superior Derecha
-        { x: w * 0.96, y: h * 0.88 }, // Inferior Derecha
-        { x: w * 0.58, y: h * 0.88 }  // Inferior Izquierda
+        { x: w * 0.55, y: h * 0.15 }, { x: w * 0.95, y: h * 0.15 },
+        { x: w * 0.95, y: h * 0.85 }, { x: w * 0.55, y: h * 0.85 }
       ];
       dibujarEncuadre();
     }
@@ -244,23 +231,23 @@
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(capturedImage, 0, 0, cropCanvas.width, cropCanvas.height);
 
-      cropCtx.beginPath();
-      cropCtx.moveTo(corners[0].x, corners[0].y);
+      cropCtx.beginPath(); cropCtx.moveTo(corners[0].x, corners[0].y);
       for (let i = 1; i < 4; i++) cropCtx.lineTo(corners[i].x, corners[i].y);
       cropCtx.closePath();
       
-      // Estilo del recuadro
-      cropCtx.lineWidth = 3;
-      cropCtx.strokeStyle = "#3b82f6";
-      cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)";
-      cropCtx.fill();
-      cropCtx.stroke();
+      cropCtx.lineWidth = 3; cropCtx.strokeStyle = "#3b82f6"; cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)";
+      cropCtx.fill(); cropCtx.stroke();
 
-      // Dibuja círculos en las esquinas para arrastrar
+      // Centro visual (Cruz)
+      let cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x)/4;
+      let cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y)/4;
+      cropCtx.beginPath(); cropCtx.arc(cx, cy, 10, 0, 2*Math.PI); cropCtx.fillStyle = "rgba(255,255,255,0.8)"; cropCtx.fill();
+
+      // Esquinas azules
       corners.forEach((c) => {
-        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 16, 0, 2 * Math.PI);
-        cropCtx.fillStyle = "#10b981"; cropCtx.fill();
-        cropCtx.lineWidth = 3; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
+        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 18, 0, 2 * Math.PI);
+        cropCtx.fillStyle = "rgba(59, 130, 246, 0.8)"; cropCtx.fill();
+        cropCtx.lineWidth = 2; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
       });
     }
 
@@ -275,8 +262,7 @@
       let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
       if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
       let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-      t = Math.max(0, Math.min(1, t));
-      return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+      t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
     }
 
     function pointInPolygon(point, vs) {
@@ -289,70 +275,47 @@
       return inside;
     }
 
-    // Interacción Drag & Drop Completa
     cropCanvas.addEventListener('pointerdown', (e) => {
-      let pos = getTouchPos(e);
-      activeHandle = null;
-
-      for (let i=0; i<4; i++) {
-        if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 35) { activeHandle = i; return; }
-      }
-      for (let i=0; i<4; i++) {
-        let j = (i + 1) % 4;
-        if (distToSegment(pos, corners[i], corners[j]) < 25) { activeHandle = `edge_${i}`; dragOffset = pos; return; }
-      }
-      if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; }
+      let pos = getTouchPos(e); activeHandle = null;
+      for (let i=0; i<4; i++) { if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 35) { activeHandle = i; return; } }
+      if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
+      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 30) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
     });
 
     cropCanvas.addEventListener('pointermove', (e) => {
       if (activeHandle === null) return;
-      let pos = getTouchPos(e);
-      let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
+      let pos = getTouchPos(e); let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
 
-      if (typeof activeHandle === 'number') { 
-        corners[activeHandle].x = Math.max(0, Math.min(cropCanvas.width, pos.x));
-        corners[activeHandle].y = Math.max(0, Math.min(cropCanvas.height, pos.y));
-      } 
-      else if (activeHandle === "center") { 
-        corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos;
-      } 
-      else if (activeHandle.startsWith("edge_")) { 
-        let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4;
-        corners[edgeIdx].x += dx; corners[edgeIdx].y += dy;
-        corners[nextIdx].x += dx; corners[nextIdx].y += dy;
-        dragOffset = pos;
-      }
+      if (typeof activeHandle === 'number') { corners[activeHandle].x = Math.max(0, Math.min(cropCanvas.width, pos.x)); corners[activeHandle].y = Math.max(0, Math.min(cropCanvas.height, pos.y)); } 
+      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
+      else if (activeHandle.startsWith("edge_")) { let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; dragOffset = pos; }
       dibujarEncuadre();
     });
-
     window.addEventListener('pointerup', () => { activeHandle = null; });
 
-    // PASO 3: RECORTAR (WARP) E INICIAR LECTURA MATEMÁTICA DE BURBUJAS VACÍAS
+    // PASO 3: APLANADO PERFECTO Y MALLA CSS GRID
     function iniciarFiltrosYEdicion() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
 
-      let scaleX = capturedImage.width / cropCanvas.width;
-      let scaleY = capturedImage.height / cropCanvas.height;
+      let scaleX = capturedImage.width / cropCanvas.width; let scaleY = capturedImage.height / cropCanvas.height;
 
       let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        corners[0].x * scaleX, corners[0].y * scaleY,
-        corners[1].x * scaleX, corners[1].y * scaleY,
-        corners[2].x * scaleX, corners[2].y * scaleY,
-        corners[3].x * scaleX, corners[3].y * scaleY
+        corners[0].x * scaleX, corners[0].y * scaleY, corners[1].x * scaleX, corners[1].y * scaleY,
+        corners[2].x * scaleX, corners[2].y * scaleY, corners[3].x * scaleX, corners[3].y * scaleY
       ]);
 
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
 
-      // La matriz ahora es: opc columnas (+1 por número de pregunta), y cantP filas (+1 por los encabezados ABCD)
-      let cellW = 40; let cellH = 35;
-      let targetW = (opc + 1) * cellW; 
-      let targetH = (cantP + 1) * cellH; // +1 fila para los encabezados A, B, C, D
+      // La Malla Rígida (CSS Grid) tiene un "Pitch" de 40px exacto en todas direcciones.
+      let cellPitch = 40; 
+      let targetW = (opc + 1) * cellPitch; 
+      let targetH = (cantP + 1) * cellPitch; 
 
+      // Las 4 esquinas marcadas encajan perfectamente en los 4 vértices del canvas.
       let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, targetW, targetH, 0, targetH]);
 
       let src = cv.imread(capturedImage);
-      if (warpedMatBase) warpedMatBase.delete();
-      warpedMatBase = new cv.Mat();
+      if (warpedMatBase) warpedMatBase.delete(); warpedMatBase = new cv.Mat();
       cv.warpPerspective(src, warpedMatBase, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(targetW, targetH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
 
       src.delete(); srcTri.delete(); dstTri.delete();
@@ -361,98 +324,84 @@
       aplicarFiltrosBinarizacion();
     }
 
-    // EL VISOR B/N Y CÁLCULO INVERSO (BURBUJAS VACÍAS)
+    // VISOR DE BINARIZACIÓN INVERSA (Lo que se pinta se ve blanco)
     function aplicarFiltrosBinarizacion() {
       let valB = parseInt(document.getElementById('slBrillo').value);
       let valC = parseInt(document.getElementById('slContraste').value) / 10;
       let valU = parseInt(document.getElementById('slUmbral').value);
 
-      document.getElementById('valBrillo').innerText = valB;
-      document.getElementById('valContraste').innerText = valC.toFixed(1);
-      document.getElementById('valUmbral').innerText = valU;
+      document.getElementById('valBrillo').innerText = valB; document.getElementById('valContraste').innerText = valC.toFixed(1); document.getElementById('valUmbral').innerText = valU;
 
-      let gray = new cv.Mat();
-      cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY, 0);
+      let gray = new cv.Mat(); cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      let adjusted = new cv.Mat();
-      gray.convertTo(adjusted, -1, valC, valB);
+      // Si es LED, derretimos los pixeles Moiré
+      if (modoPantalla) { let blur = new cv.Mat(); cv.GaussianBlur(gray, blur, new cv.Size(9, 9), 0); blur.copyTo(gray); blur.delete(); }
 
-      // BINARIZACIÓN INVERSA: Todo lo blanco se hace negro(0). Lo gris del lápiz se hace blanco puro(255).
-      let binarized = new cv.Mat();
-      cv.threshold(adjusted, binarized, valU, 255, cv.THRESH_BINARY_INV);
+      let adjusted = new cv.Mat(); gray.convertTo(adjusted, -1, valC, valB);
+      let binarized = new cv.Mat(); cv.threshold(adjusted, binarized, valU, 255, cv.THRESH_BINARY_INV);
 
       cv.imshow(bwCanvas, binarized);
-
       leerRespuestasDeBinarizado(binarized);
       gray.delete(); adjusted.delete(); binarized.delete();
     }
 
+    // LECTURA MILIMÉTRICA DEL CENTRO
     function leerRespuestasDeBinarizado(binMat) {
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
-      let cellW = 40; let cellH = 35;
-
+      let cellPitch = 40; 
       arregloRespuestasManuales = [];
 
       for (let r = 0; r < cantP; r++) {
         let maxBlancos = 0; let idxM = -1;
-
         for (let c = 0; c < opc; c++) {
-          let cx = (c + 1) * cellW + (cellW / 2); 
-          let cy = (r + 1) * cellH + (cellH / 2); // r+1 salta matemáticamente la fila de encabezados A B C D
+          // El centro exacto en X: saltamos columna cero (c+1), sumamos la mitad de la celda (16px)
+          let cx = (c + 1) * cellPitch + 16; 
+          let cy = (r + 1) * cellPitch + 16; 
           
-          let scanW = 20; let scanH = 20;
+          // Ventana muy pequeña de 10x10 en el puro centro
+          let scanW = 10; let scanH = 10;
           let rx = Math.max(0, cx - scanW/2); let ry = Math.max(0, cy - scanH/2);
           let rectScan = new cv.Rect(rx, ry, scanW, scanH);
           
-          let roi = binMat.roi(rectScan);
-          // Cuenta cuántos píxeles BLANCOS (es decir, pintados por el usuario) hay
-          let pixelCount = cv.countNonZero(roi);
-          roi.delete();
+          if(rectScan.x + rectScan.width <= binMat.cols && rectScan.y + rectScan.height <= binMat.rows) {
+            let roi = binMat.roi(rectScan);
+            let pixelCount = cv.countNonZero(roi);
+            roi.delete();
 
-          // Como la burbuja está Vacia, si encuentra 10% de pixeles blancos(lápiz), es un acierto rotundo.
-          if (pixelCount > maxBlancos && pixelCount > (scanW * scanH * 0.10)) {
-            maxBlancos = pixelCount;
-            idxM = c;
+            // Muy sensible: Si encuentra al menos 8 pixeles pintados en ese centro, es acierto.
+            if (pixelCount > maxBlancos && pixelCount >= 8) { maxBlancos = pixelCount; idxM = c; }
           }
         }
         let letras = ["A", "B", "C", "D"];
         arregloRespuestasManuales.push(idxM >= 0 ? letras[idxM] : "BLANCO");
       }
-
       renderizarResultadosYEditor();
     }
 
-    // RENDER FINAL Y ESTAMPADO DE NOTA EN FOTO GRANDE
+    // NOTA Y EDICIÓN MANUAL
     function renderizarResultadosYEditor() {
       let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
-      let aciertos = 0; let detalleArray = []; let incorrectasArray = [];
-      let html = "";
+      let aciertos = 0; let detalleArray = []; let incorrectasArray = []; let html = "";
 
       for (let i = 0; i < cantP; i++) {
-        let lC = clave[i]; let lM = arregloRespuestasManuales[i];
-        let esCorrecta = (lM === lC);
+        let lC = clave[i]; let lM = arregloRespuestasManuales[i]; let esCorrecta = (lM === lC);
         if (esCorrecta) aciertos++; else incorrectasArray.push(i+1);
         detalleArray.push(`${i+1}:${lM}(${esCorrecta?'OK':'❌'+lC})`);
 
         let opts = ["A", "B", "C", "D"].slice(0, opc); opts.push("BLANCO");
         let optString = opts.map(o => `<option value="${o}" ${o===lM?'selected':''}>${o}</option>`).join("");
         let classColor = esCorrecta ? 'c-ok' : 'c-err';
-
         html += `<div class="edit-row"><span class="${classColor}">Pregunta ${i+1} (Correcta: ${lC})</span><select onchange="actualizarRespuestaManual(${i}, this.value)">${optString}</select></div>`;
       }
 
       document.getElementById('editorFilas').innerHTML = html;
 
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
-      dataEvaluacion = {
-        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
-        preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
-      };
+      dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
       canvasFinal.width = capturedImage.width; canvasFinal.height = capturedImage.height;
       ctxFinal.drawImage(capturedImage, 0, 0);
 
-      // Estampar nota
       let textoNota = `NOTA: ${notaSobre100}/100`;
       ctxFinal.font = "bold 60px Arial"; let anchoTexto = ctxFinal.measureText(textoNota).width;
       let posX = canvasFinal.width - anchoTexto - 40; let posY = 80;
@@ -466,10 +415,7 @@
       finalBase64 = canvasFinal.toDataURL('image/jpeg', 0.85).split(',')[1];
     }
 
-    function actualizarRespuestaManual(idx, valor) {
-      arregloRespuestasManuales[idx] = valor;
-      renderizarResultadosYEditor();
-    }
+    function actualizarRespuestaManual(idx, valor) { arregloRespuestasManuales[idx] = valor; renderizarResultadosYEditor(); }
 
     function guardarImagenLocal(base64, filename) {
       const link = document.createElement("a"); link.href = "data:image/jpeg;base64," + base64; link.download = filename + ".jpg";
@@ -477,8 +423,7 @@
     }
 
     async function enviarCalificacion() {
-      document.getElementById('reviewButtons').style.display = 'none';
-      document.getElementById('loaderUpload').style.display = 'block';
+      document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
 
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
@@ -486,22 +431,12 @@
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
 
-      let payload = { 
-        pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
-        nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
-        aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
-        nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas, preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas,
-        fileName: finalFileName
-      };
+      let payload = { pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre, nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas, nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas, preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas, fileName: finalFileName };
 
       try {
         let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
         let result = await res.json();
-        if (result.status === "success") { 
-          guardarImagenLocal(finalBase64, finalFileName); 
-          showNotif("¡Nota enviada y Foto descargada!"); 
-          setTimeout(() => { switchPanel('panel-config'); }, 2200); 
-        } 
+        if (result.status === "success") { guardarImagenLocal(finalBase64, finalFileName); showNotif("¡Nota enviada y Foto descargada!"); setTimeout(() => { switchPanel('panel-config'); }, 2200); } 
         else throw new Error(result.message);
       } catch (e) { alert("Error al subir a Sheets: " + e.message); document.getElementById('reviewButtons').style.display = 'block'; } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
