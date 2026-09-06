@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Crop Mode</title>
+  <title>OMR Scanner Pro - Matriz Matemática</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -19,14 +19,12 @@
     
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
-    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CON RECORTE Y ENFOQUE */
-    .camera-wrapper { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); aspect-ratio: 8.5/11; border: 3px solid #10b981;}
-    video { width: 100%; height: 100%; object-fit: cover; }
-    canvas { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
-
-    .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 1rem; text-shadow: 1px 1px 4px #000;}
+    /* CÁMARA CONTAIN (Vista completa sin recortes) */
+    .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
+    .camera-container::before { content: ""; display: block; padding-top: 133%; }
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
 
     #feedbackList { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 15px; border: 1px solid #334155; }
     .fb-item { margin-bottom: 5px; }
@@ -56,23 +54,21 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA (Recorte automático) -->
+  <!-- PANEL 2 -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Llene el marco verde con la hoja...</div>
-    <div class="camera-wrapper" id="cameraWrapper">
+    <div class="info-text" id="infoScanText">Aleje el teléfono para ver toda la hoja...</div>
+    <div class="camera-container">
       <video id="videoElement" autoplay playsinline></video>
-      <div class="guide-text">Llene este recuadro verde con la hoja</div>
     </div>
     <button class="btn btn-success" onclick="capturarYEvaluar()">⏺️ CAPTURAR IMAGEN</button>
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: REVISIÓN DE IMAGEN -->
+  <!-- PANEL 3 -->
   <div id="panel-review" class="panel">
     <div id="reviewWarning">⚠️ La lectura puede ser errónea. Por favor verifique o retome la foto.</div>
     <div class="info-text" style="color: #fbbf24;">Revise la calificación antes de enviar</div>
-    
-    <canvas id="canvasResult"></canvas>
+    <div class="camera-container"><canvas id="canvasResult"></canvas></div>
     
     <div id="feedbackList"></div>
 
@@ -87,7 +83,7 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWzAQgP0O9SI-duFMxelzBdvmlx_5MWz1QUz3hFIXpHn7NZtzgstZPov37FjlePZ1uCA/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWhHUPw_DM9N98rJyOzNVq7gH94tsXJKN5uJJ19YXMvtpc3BlnkBAyGUqOjjZfnMknag/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
@@ -121,20 +117,16 @@
     async function abrirCamara() {
       estudianteActual = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
-      
-      const constraints = { 
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
-      };
-
       try { 
-        stream = await navigator.mediaDevices.getUserMedia(constraints); 
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } }); 
         
-        // INTENTO DE AUTOENFOQUE CONTÍNUO (Funciona en algunos Android)
+        // Intentar autoenfoque
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities();
         if (caps.focusMode && caps.focusMode.includes("continuous")) {
             await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
         }
+        
         video.srcObject = stream; 
       } 
       catch (err) { alert("Permita acceso a la cámara."); }
@@ -145,38 +137,25 @@
     function reintentarFoto() { switchPanel('panel-camera'); }
 
     // ==========================================
-    // ANÁLISIS DE MATRIZ CON CROP PERFECTO
+    // ANÁLISIS DE MATRIZ MATEMÁTICA CON OPENCV
     // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      
-      // 1. Recortar (Crop) la imagen exacta que se ve en el recuadro verde (Object-fit cover)
-      const wrapper = document.getElementById('cameraWrapper');
-      const cW = wrapper.clientWidth; const cH = wrapper.clientHeight;
-      const vW = video.videoWidth; const vH = video.videoHeight;
-      const scale = Math.max(cW / vW, cH / vH);
-      const drawW = vW * scale; const drawH = vH * scale;
-      const cropX = (drawW - cW) / 2 / scale;
-      const cropY = (drawH - cH) / 2 / scale;
-      const cropW = cW / scale;
-      const cropH = cH / scale;
-
-      canvas.width = cropW; canvas.height = cropH;
-      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       switchPanel('panel-review');
 
-      // 2. Procesamiento OpenCV
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
+      // Usar Otsu general (más limpio para grafito si la luz es buena)
       let thresh = new cv.Mat();
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
 
-      // El OMR está en la columna derecha de la hoja cortada (aprox 40% derecho)
-      let roiStartX = Math.floor(cropW * 0.60);
-      let roiWidth = cropW - roiStartX;
-      let rect = new cv.Rect(roiStartX, 0, roiWidth, cropH);
+      // Analizar zona derecha (OMR)
+      let roiStartX = Math.floor(canvas.width * 0.45);
+      let roiWidth = canvas.width - roiStartX;
+      let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
       let roiThresh = thresh.roi(rect);
 
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
@@ -192,12 +171,15 @@
         let r = cv.boundingRect(cnt);
         let area = cv.contourArea(cnt);
         let perimeter = cv.arcLength(cnt, true);
+        
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
         
-        if (area > 150 && area < 6000 && circularity > 0.65) {
+        if (area > 150 && area < 8000 && circularity > 0.55) {
           burbujas.push(r);
-          if (r.x < minX) minX = r.x; if (r.y < minY) minY = r.y;
-          if (r.x + r.width > maxX) maxX = r.x + r.width; if (r.y + r.height > maxY) maxY = r.y + r.height;
+          if (r.x < minX) minX = r.x;
+          if (r.y < minY) minY = r.y;
+          if (r.x + r.width > maxX) maxX = r.x + r.width;
+          if (r.y + r.height > maxY) maxY = r.y + r.height;
           sumW += r.width; sumH += r.height;
         }
       }
@@ -206,10 +188,13 @@
       let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      if (burbujas.length < (cantP * opc) / 3) { reviewWarning.style.display = 'block'; } else { reviewWarning.style.display = 'none'; }
+      if (burbujas.length < (cantP * opc) / 3) {
+        reviewWarning.style.display = 'block';
+      } else { reviewWarning.style.display = 'none'; }
 
       let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
       let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
+
       let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
       let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
 
@@ -222,8 +207,10 @@
 
         for (let j = 0; j < opc; j++) {
           let xCenter = minX + (j * colWidth) + (avgW / 2);
+          
           let scanW = avgW * 1.2; let scanH = avgH * 1.2;
-          let rx = Math.max(0, xCenter - scanW/2); let ry = Math.max(0, yCenter - scanH/2);
+          let rx = Math.max(0, xCenter - scanW/2);
+          let ry = Math.max(0, yCenter - scanH/2);
           
           let scanRect = new cv.Rect(rx, ry, scanW, scanH);
           let roiB = roiThresh.roi(scanRect);
@@ -234,7 +221,7 @@
         }
 
         let lResp = ["A", "B", "C", "D"]; 
-        let lM = idxM >= 0 ? lResp[idxM] : "En Blanco"; 
+        let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; 
         let lC = clave[i];
         
         let color = (lM === lC) ? "green" : "red";
@@ -250,11 +237,11 @@
         if (idxM >= 0) {
           let markX = roiStartX + minX + (idxM * colWidth) + (avgW / 2);
           let markY = minY + (i * rowHeight) + (avgH / 2);
-          ctx.beginPath(); ctx.lineWidth=8; ctx.strokeStyle=color;
-          ctx.arc(markX, markY, avgW/2 + 15, 0, 2*Math.PI); ctx.stroke();
+          ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+          ctx.arc(markX, markY, avgW/2 + 10, 0, 2*Math.PI); ctx.stroke();
         }
       }
-
+      
       document.getElementById('feedbackList').innerHTML = feedbackHTML;
 
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
@@ -265,9 +252,31 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Nota visual
-      ctx.font = "bold 130px Arial"; ctx.fillStyle = "red"; ctx.fillText(`NOTA: ${notaSobre100}`, 50, 150);
-      ctx.lineWidth = 6; ctx.strokeStyle = "white"; ctx.strokeText(`NOTA: ${notaSobre100}`, 50, 150);
+      // DIBUJAR NOTA MITAD DE TAMAÑO EN LA ESQUINA SUPERIOR DERECHA
+      ctx.font = "bold 65px Arial";
+      let textoNota = `NOTA: ${notaSobre100}/100`;
+      let anchoTexto = ctx.measureText(textoNota).width;
+      let xPos = canvas.width - anchoTexto - 30; // 30px margen derecho
+      let yPos = 80; // 80px margen superior
+
+      ctx.fillStyle = "red"; 
+      ctx.fillText(textoNota, xPos, yPos);
+      ctx.lineWidth = 3; 
+      ctx.strokeStyle = "white"; 
+      ctx.strokeText(textoNota, xPos, yPos);
+
+      // Dibujar subtexto aciertos debajo de la nota
+      ctx.font = "bold 35px Arial"; 
+      let textoAciertos = `(${aciertos} correctas de ${cantP})`;
+      let anchoSub = ctx.measureText(textoAciertos).width;
+      let xPosSub = canvas.width - anchoSub - 30;
+      let yPosSub = yPos + 40;
+
+      ctx.fillStyle = "#38bdf8"; 
+      ctx.fillText(textoAciertos, xPosSub, yPosSub);
+      ctx.lineWidth = 2; 
+      ctx.strokeStyle = "black"; 
+      ctx.strokeText(textoAciertos, xPosSub, yPosSub);
 
       finalBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
