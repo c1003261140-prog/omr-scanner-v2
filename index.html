@@ -24,11 +24,11 @@
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; border: 2px solid #3b82f6; }
     video { width: 100%; height: 100%; object-fit: cover; }
 
-    /* LIENZO RECORTE DE PÁGINA (NUEVO) */
+    /* LIENZO RECORTE MANUAL (Líneas Roja y Amarilla) */
     .page-crop-stage { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; touch-action: none; border: 2px solid #ea580c;}
     #pageCropCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
-    /* LIENZO ENCUADRE OMR */
+    /* LIENZO ENCUADRE OMR AZUL */
     .crop-stage { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; touch-action: none; border: 2px solid #10b981;}
     #cropCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
@@ -38,11 +38,11 @@
     .filter-row input[type=range] { flex: 1; margin: 0 10px; accent-color: #3b82f6; }
     .filter-row span { font-size: 0.8rem; color: #f8fafc; width: 30px; text-align: right; }
     
-    /* VISOR B/N TERCIO PANTALLA Y EXPANSIBLE */
+    /* VISOR B/N 33% EXPANSIBLE */
     .preview-bw { width: 33%; height: auto; background: #000; border: 1px solid #334155; border-radius: 6px; display: inline-block; margin: 8px auto 0 auto; cursor: pointer; transition: 0.3s ease; }
     .preview-bw.expanded { width: 100%; }
 
-    /* FOTO FINAL COMPACTA (SIN AUTO-CROP) */
+    /* FOTO FINAL COMPACTA */
     .mini-canvas-container { position: relative; width: 100%; height: 140px; border-radius: 8px; overflow: hidden; border: 2px solid #10b981; margin-bottom: 15px; cursor: pointer; transition: 0.3s ease;}
     .mini-canvas-container.expanded { height: 60vh; max-height: 500px; }
     #canvasFinal { width: 100%; height: 100%; object-fit: contain; background: #000; }
@@ -103,9 +103,9 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 2.5: RECORTE MANUAL DE PÁGINA (NUEVO) -->
+  <!-- PANEL 2.5: RECORTE MANUAL DE PÁGINA (Arriba y Abajo) -->
   <div id="panel-page-crop" class="panel">
-    <div class="info-text" style="color: #ea580c;">Paso 1.5: Arrastre las líneas roja y amarilla para recortar la mesa (Arriba y Abajo).</div>
+    <div class="info-text" style="color: #ea580c;">Paso 1.5: Arrastre las líneas roja y amarilla para recortar el exceso de mesa.</div>
     <div class="page-crop-stage" id="pageCropStage">
       <canvas id="pageCropCanvas"></canvas>
     </div>
@@ -126,19 +126,16 @@
   <!-- PANEL 4: ESTUDIO B/N Y EDICIÓN -->
   <div id="panel-review" class="panel">
     
-    <!-- Visor de Binarización -->
     <div class="filter-panel">
       <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">VISOR DE LECTURA (B/N)</div>
       <div class="filter-row"><label>Brillo</label><input type="range" id="slBrillo" min="-100" max="100" value="-25" oninput="aplicarFiltrosBinarizacion()"><span id="valBrillo">-25</span></div>
       <div class="filter-row"><label>Contraste</label><input type="range" id="slContraste" min="10" max="40" value="24" oninput="aplicarFiltrosBinarizacion()"><span id="valContraste">2.4</span></div>
       <div class="filter-row"><label>Lápiz</label><input type="range" id="slUmbral" min="100" max="250" value="168" oninput="aplicarFiltrosBinarizacion()"><span id="valUmbral">168</span></div>
-      
-      <!-- Visor miniatura que se expande al tocar -->
       <canvas id="bwCanvasPreview" class="preview-bw" onclick="toggleExpandBW(this)"></canvas>
       <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:4px;">(Toque la imagen B/N para ampliarla)</div>
     </div>
 
-    <!-- Fotografía Final Compacta sin Auto-Crop caprichoso -->
+    <!-- Fotografía Final Compacta -->
     <div class="mini-canvas-container" id="miniCanvasBox" onclick="toggleExpandCanvas()">
       <canvas id="canvasFinal"></canvas>
       <div class="expand-hint" id="expandHint">🔍 Toca para ampliar</div>
@@ -150,7 +147,7 @@
       <div id="editorFilas"></div>
     </div>
 
-    <div class="loader" id="loaderUpload">⏳ Guardando en Sheets...</div>
+    <div class="loader" id="loaderUpload">⏳ Guardando...</div>
     
     <div id="reviewButtons">
       <button class="btn btn-success" onclick="enviarCalificacion()">📥 CONFIRMAR Y SUBIR NOTA</button>
@@ -172,13 +169,13 @@
     let bwCanvas = document.getElementById('bwCanvasPreview'); let bwCtx = bwCanvas.getContext('2d');
     
     let stream = null; let opencvReady = false; let userPin = "";
-    let rawImage = null; // Foto original tal cual
-    let capturedImage = null; // Foto luego de recortar arriba y abajo
+    let rawImage = null; // Foto 100% original
+    let capturedImage = null; // Foto tras el recorte manual
     let warpedMatBase = null; 
     let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     let arregloRespuestasManuales = [];
 
-    // Variables de Recorte Manual de Página
+    // Recorte Manual
     let pageTopY = 0; let pageBottomY = 0; let activePageLine = null;
 
     let corners = []; let activeHandle = null; let dragOffset = {x:0, y:0};
@@ -226,26 +223,25 @@
       const constraints = { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } };
       try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } catch (err) { alert("Permita acceso a la cámara."); }
     }
+
     function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarCamara() { switchPanel('panel-camera'); }
 
-    // PASO 1: FOTO FIJA ORIGINAL
     function capturarFotoFija() {
       rawImage = document.createElement('canvas');
       rawImage.width = video.videoWidth; rawImage.height = video.videoHeight;
       rawImage.getContext('2d').drawImage(video, 0, 0);
-      detenerCamara(); 
-      iniciarRecortePagina();
+      detenerCamara(); iniciarRecortePagina();
     }
 
-    // PASO 1.5: RECORTE MANUAL DE PÁGINA
+    // PASO 1.5: RECORTE MANUAL
     function iniciarRecortePagina() {
       switchPanel('panel-page-crop');
       pageCropCanvas.width = pageCropCanvas.clientWidth;
       pageCropCanvas.height = pageCropCanvas.clientHeight;
-      pageTopY = pageCropCanvas.height * 0.10;
-      pageBottomY = pageCropCanvas.height * 0.90;
+      pageTopY = pageCropCanvas.height * 0.05;
+      pageBottomY = pageCropCanvas.height * 0.95;
       dibujarPageCrop();
     }
 
@@ -253,16 +249,12 @@
       pageCropCtx.clearRect(0, 0, pageCropCanvas.width, pageCropCanvas.height);
       pageCropCtx.drawImage(rawImage, 0, 0, pageCropCanvas.width, pageCropCanvas.height);
       
-      // Sombra top
       pageCropCtx.fillStyle = "rgba(0,0,0,0.6)"; pageCropCtx.fillRect(0, 0, pageCropCanvas.width, pageTopY);
-      // Sombra bottom
       pageCropCtx.fillRect(0, pageBottomY, pageCropCanvas.width, pageCropCanvas.height - pageBottomY);
       
-      // Linea Roja Top
       pageCropCtx.beginPath(); pageCropCtx.moveTo(0, pageTopY); pageCropCtx.lineTo(pageCropCanvas.width, pageTopY);
       pageCropCtx.lineWidth = 4; pageCropCtx.strokeStyle = "red"; pageCropCtx.stroke();
       
-      // Linea Amarilla Bottom
       pageCropCtx.beginPath(); pageCropCtx.moveTo(0, pageBottomY); pageCropCtx.lineTo(pageCropCanvas.width, pageBottomY);
       pageCropCtx.lineWidth = 4; pageCropCtx.strokeStyle = "yellow"; pageCropCtx.stroke();
     }
@@ -283,23 +275,17 @@
     });
     window.addEventListener('pointerup', () => { activePageLine = null; });
 
-    // CONFIRMAR RECORTE Y PASAR AL OMR
     function confirmarRecortePagina() {
       let scaleY = rawImage.height / pageCropCanvas.height;
-      let realTop = pageTopY * scaleY;
-      let realBottom = pageBottomY * scaleY;
-      let realHeight = realBottom - realTop;
+      let realTop = pageTopY * scaleY; let realBottom = pageBottomY * scaleY; let realHeight = realBottom - realTop;
 
       capturedImage = document.createElement('canvas');
-      capturedImage.width = rawImage.width;
-      capturedImage.height = realHeight;
-      // Slice de la imagen original
+      capturedImage.width = rawImage.width; capturedImage.height = realHeight;
       capturedImage.getContext('2d').drawImage(rawImage, 0, realTop, rawImage.width, realHeight, 0, 0, rawImage.width, realHeight);
-      
       iniciarEtapaEncuadre();
     }
 
-    // PASO 2: ENCUADRE OMR
+    // PASO 2: ENCUADRE OMR AZUL
     function iniciarEtapaEncuadre() {
       switchPanel('panel-crop');
       cropCanvas.width = cropCanvas.clientWidth; cropCanvas.height = cropCanvas.clientHeight;
@@ -311,11 +297,23 @@
     function dibujarEncuadre() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(capturedImage, 0, 0, cropCanvas.width, cropCanvas.height);
-      cropCtx.beginPath(); cropCtx.moveTo(corners[0].x, corners[0].y); for (let i = 1; i < 4; i++) cropCtx.lineTo(corners[i].x, corners[i].y); cropCtx.closePath();
-      cropCtx.lineWidth = 3; cropCtx.strokeStyle = "#3b82f6"; cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)"; cropCtx.fill(); cropCtx.stroke();
-      let cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x)/4; let cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y)/4;
+
+      cropCtx.beginPath(); cropCtx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) cropCtx.lineTo(corners[i].x, corners[i].y);
+      cropCtx.closePath();
+      
+      cropCtx.lineWidth = 3; cropCtx.strokeStyle = "#3b82f6"; cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)";
+      cropCtx.fill(); cropCtx.stroke();
+
+      let cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x)/4;
+      let cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y)/4;
       cropCtx.beginPath(); cropCtx.arc(cx, cy, 10, 0, 2*Math.PI); cropCtx.fillStyle = "rgba(255,255,255,0.8)"; cropCtx.fill();
-      corners.forEach((c) => { cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 18, 0, 2 * Math.PI); cropCtx.fillStyle = "rgba(59, 130, 246, 0.8)"; cropCtx.fill(); cropCtx.lineWidth = 2; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke(); });
+
+      corners.forEach((c) => {
+        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 18, 0, 2 * Math.PI);
+        cropCtx.fillStyle = "rgba(59, 130, 246, 0.8)"; cropCtx.fill();
+        cropCtx.lineWidth = 2; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
+      });
     }
 
     function getTouchPos(e) { let rect = cropCanvas.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
@@ -341,7 +339,7 @@
 
     function volverAlCrop() { switchPanel('panel-crop'); }
 
-    // PASO 3: APLANADO PERFECTO Y LECTURA
+    // PASO 3: APLANADO Y FILTROS B/N
     function iniciarFiltrosYEdicion() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
 
@@ -397,27 +395,22 @@
       renderizarResultadosYEditor();
     }
 
-    // FUNCIÓN PARA ENVOLVER TEXTO LARGO
+    // FUNCIÓN AUXILIAR PARA DIBUJAR PÁRRAFOS
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
-        var words = text.split(' ');
-        var line = '';
+        var words = text.split(' '); var line = '';
         for(var n = 0; n < words.length; n++) {
-          var testLine = line + words[n] + ' ';
-          var metrics = context.measureText(testLine);
-          var testWidth = metrics.width;
-          if (testWidth > maxWidth && n > 0) {
-            context.fillText(line, x, y); line = words[n] + ' '; y += lineHeight;
-          } else { line = testLine; }
+          var testLine = line + words[n] + ' '; var metrics = context.measureText(testLine);
+          if (metrics.width > maxWidth && n > 0) { context.fillText(line, x, y); line = words[n] + ' '; y += lineHeight; } 
+          else { line = testLine; }
         }
-        context.fillText(line, x, y);
-        return y + lineHeight;
+        context.fillText(line, x, y); return y + lineHeight;
     }
 
     function renderizarResultadosYEditor() {
       let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
       let aciertos = 0; let detalleArray = []; let incorrectasArray = []; let html = "";
       
-      let listFallas = []; // Rúbricas para las preguntas erróneas
+      let listFallas = []; 
 
       for (let i = 0; i < cantP; i++) {
         let lC = clave[i]; let lM = arregloRespuestasManuales[i]; let esCorrecta = (lM === lC);
@@ -441,52 +434,24 @@
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
       dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-      // DIBUJAR LA FOTO RECORTADA (SIN LA MESA DE FONDO)
+      // DIBUJAR FOTO FINAL (CON EL RECORTE MANUAL)
       canvasFinal.width = capturedImage.width; 
       canvasFinal.height = capturedImage.height;
       ctxFinal.drawImage(capturedImage, 0, 0);
 
-      // --- SELLOS Y RÚBRICAS ---
+      // --- SELLOS DE AGUA ---
 
-      // 1. Sello Superior (Nombre, Curso, Nota)
+      // 1. Sello Superior (Nombre y Curso)
       ctxFinal.fillStyle = "rgba(255, 255, 255, 0.9)";
-      ctxFinal.fillRect(20, 20, 700, 130);
-      ctxFinal.lineWidth = 3; ctxFinal.strokeStyle = "black"; ctxFinal.strokeRect(20, 20, 700, 130);
+      ctxFinal.fillRect(20, 20, 650, 110);
+      ctxFinal.lineWidth = 3; ctxFinal.strokeStyle = "black"; ctxFinal.strokeRect(20, 20, 650, 110);
       
-      ctxFinal.fillStyle = "black"; ctxFinal.font = "bold 32px Arial";
-      ctxFinal.fillText(`👤 ${estudianteActual.nombre}`, 40, 60);
-      ctxFinal.font = "26px Arial";
-      ctxFinal.fillText(`CURSO: ${examenActual.curso}  |  N° LISTA: ${estudianteActual.n_lista}`, 40, 95);
-      ctxFinal.font = "bold 36px Arial"; ctxFinal.fillStyle = "red";
-      ctxFinal.fillText(`NOTA: ${notaSobre100}/100 (${aciertos} aciertos)`, 40, 135);
+      ctxFinal.fillStyle = "black"; ctxFinal.font = "bold 35px Arial";
+      ctxFinal.fillText(`👤 ALUMNO: ${estudianteActual.nombre}`, 40, 65);
+      ctxFinal.font = "28px Arial";
+      ctxFinal.fillText(`📚 CURSO: ${examenActual.curso}  |  N° LISTA: ${estudianteActual.n_lista}`, 40, 110);
 
-      // 2. Sello de Rúbricas (Esquina inferior derecha)
-      if (listFallas.length > 0) {
-          let stampW = 550; let stampX = canvasFinal.width - stampW - 30;
-          let stampY = canvasFinal.height - 350; // Aprox inferior derecha
-          
-          ctxFinal.fillStyle = "rgba(255, 220, 220, 0.95)";
-          ctxFinal.fillRect(stampX, stampY, stampW, 320);
-          ctxFinal.lineWidth = 3; ctxFinal.strokeStyle = "red"; ctxFinal.strokeRect(stampX, stampY, stampW, 320);
-
-          ctxFinal.fillStyle = "black"; ctxFinal.font = "bold 26px Arial";
-          ctxFinal.fillText("📋 RÚBRICA DE MEJORA:", stampX + 20, stampY + 40);
-          
-          ctxFinal.font = "bold 22px Arial";
-          let currentY = stampY + 80;
-          for (let i=0; i<listFallas.length; i++) {
-              if (currentY > stampY + 300) break; // Límite de caja
-              currentY = wrapText(ctxFinal, listFallas[i], stampX + 20, currentY, stampW - 40, 28) + 10;
-          }
-      } else {
-        // Sello si hizo TODO perfecto
-          let stampW = 400; let stampX = canvasFinal.width - stampW - 30; let stampY = canvasFinal.height - 120;
-          ctxFinal.fillStyle = "rgba(200, 255, 200, 0.95)"; ctxFinal.fillRect(stampX, stampY, stampW, 90);
-          ctxFinal.lineWidth = 3; ctxFinal.strokeStyle = "green"; ctxFinal.strokeRect(stampX, stampY, stampW, 90);
-          ctxFinal.fillStyle = "green"; ctxFinal.font = "bold 36px Arial"; ctxFinal.fillText("🌟 ¡EXAMEN PERFECTO!", stampX + 20, stampY + 55);
-      }
-
-      // 3. Círculos de revisión en las burbujas
+      // 2. Círculos de revisión en la hoja OMR
       let scaleX = capturedImage.width / cropCanvas.width; let scaleY = capturedImage.height / cropCanvas.height;
       let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [corners[0].x * scaleX, corners[0].y * scaleY, corners[1].x * scaleX, corners[1].y * scaleY, corners[2].x * scaleX, corners[2].y * scaleY, corners[3].x * scaleX, corners[3].y * scaleY]);
       let targetW = (opc + 1) * 40; let targetH = (cantP + 1) * 40;
@@ -502,19 +467,41 @@
           cv.perspectiveTransform(ptMat, outMat, MatrizInversa);
           
           let color = (lM === lC) ? "green" : "red";
-          ctxFinal.beginPath(); ctxFinal.lineWidth=4; ctxFinal.strokeStyle=color;
+          ctxFinal.beginPath(); ctxFinal.lineWidth=5; ctxFinal.strokeStyle=color;
           ctxFinal.arc(outMat.data32F[0], outMat.data32F[1], 16, 0, 2*Math.PI); ctxFinal.stroke();
           ptMat.delete(); outMat.delete();
         }
       }
       MatrizInversa.delete(); srcTri.delete(); dstTri.delete();
 
-      // CREA EL NOMBRE DEL ARCHIVO: [CURSO]-[NOMBRE]-[TIPO]-[PREGUNTAS]-[FECHA]
-      let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
-      let t = examenActual.tipo.toUpperCase(); let tA="OT";
-      if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
-      let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
-      finalFileName = `${examenActual.curso}-${nomA}-${tA}-${cantP}P-${ts}`;
+      // 3. Sello de la NOTA y Rúbricas (ESQUINA INFERIOR DERECHA)
+      let stampW = 550; 
+      let stampH = listFallas.length > 0 ? 150 + (listFallas.length * 35) : 150;
+      let stampX = canvasFinal.width - stampW - 30;
+      let stampY = canvasFinal.height - stampH - 30;
+
+      ctxFinal.fillStyle = "rgba(255, 255, 255, 0.95)";
+      ctxFinal.fillRect(stampX, stampY, stampW, stampH);
+      ctxFinal.lineWidth = 4; ctxFinal.strokeStyle = "#000"; ctxFinal.strokeRect(stampX, stampY, stampW, stampH);
+
+      ctxFinal.fillStyle = "red"; ctxFinal.font = "bold 45px Arial";
+      ctxFinal.fillText(`NOTA: ${notaSobre100}/100`, stampX + 20, stampY + 55);
+
+      ctxFinal.fillStyle = "blue"; ctxFinal.font = "bold 28px Arial";
+      ctxFinal.fillText(`(${aciertos} aciertos, ${cantP - aciertos} fallos)`, stampX + 20, stampY + 95);
+
+      if (listFallas.length > 0) {
+          ctxFinal.fillStyle = "black"; ctxFinal.font = "bold 24px Arial";
+          ctxFinal.fillText("SUGERENCIAS DE MEJORA:", stampX + 20, stampY + 140);
+          ctxFinal.font = "22px Arial";
+          let currentY = stampY + 175;
+          for (let i=0; i<listFallas.length; i++) {
+              currentY = wrapText(ctxFinal, listFallas[i], stampX + 20, currentY, stampW - 40, 28) + 5;
+          }
+      } else {
+          ctxFinal.fillStyle = "green"; ctxFinal.font = "bold 28px Arial";
+          ctxFinal.fillText("¡Excelente trabajo! Sin errores.", stampX + 20, stampY + 140);
+      }
 
       finalBase64 = canvasFinal.toDataURL('image/jpeg', 0.85).split(',')[1];
     }
@@ -527,16 +514,38 @@
     }
 
     async function enviarCalificacion() {
+      // 1. DESCARGAMOS LA IMAGEN PRIMERO SÍ O SÍ
+      let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
+      let t = examenActual.tipo.toUpperCase(); let tA="OT";
+      if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
+      let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
+      finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
+      
+      try { guardarImagenLocal(finalBase64, finalFileName); } catch(e) {}
+
       document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
 
       let payload = { pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre, nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas, nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas, preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas, fileName: finalFileName };
 
       try {
-        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
+        // MUY IMPORTANTE: redirect: "follow" evita el bloqueo CORS de Google Apps Script
+        let res = await fetch(SCRIPT_URL, { 
+            method: "POST", 
+            body: JSON.stringify(payload), 
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            redirect: "follow"
+        }); 
         let result = await res.json();
-        if (result.status === "success") { guardarImagenLocal(finalBase64, finalFileName); showNotif("¡Nota enviada y Foto descargada!"); setTimeout(() => { switchPanel('panel-config'); }, 2200); } 
-        else throw new Error(result.message);
-      } catch (e) { alert("Error de conexión a Sheets. Asegúrese de implementar el Apps Script para 'Cualquier persona'"); document.getElementById('reviewButtons').style.display = 'block'; } 
+        if (result.status === "success") { 
+          showNotif("¡Nota enviada a Sheets con éxito!"); 
+          setTimeout(() => { switchPanel('panel-config'); }, 2200); 
+        } else {
+            throw new Error(result.message);
+        }
+      } catch (e) { 
+        alert("Error al subir a Sheets (La foto ya se descargó a su galería). Revise los permisos en Apps Script."); 
+        document.getElementById('reviewButtons').style.display = 'block'; 
+      } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
