@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Studio Edit</title>
+  <title>OMR Scanner Pro - Studio Edit & Empty Bubbles</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -87,7 +87,7 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: ENCUADRE INTERACTIVO (BORDES, CENTRO, ESQUINAS) -->
+  <!-- PANEL 3: ENCUADRE INTERACTIVO -->
   <div id="panel-crop" class="panel">
     <div class="info-text" style="color: #38bdf8;">Paso 2: Arrastre el área azul sobre la Hoja de Respuestas.</div>
     <div class="crop-stage" id="cropStage">
@@ -97,12 +97,12 @@
     <button class="btn btn-danger" onclick="reintentarCamara()">🔄 Volver a Tomar Foto</button>
   </div>
 
-  <!-- PANEL 4: ESTUDIO DE IMAGEN, RESULTADOS Y EDICIÓN -->
+  <!-- PANEL 4: ESTUDIO DE IMAGEN Y EDICIÓN -->
   <div id="panel-review" class="panel">
     
-    <!-- Visor de Binarización (Lo que ve la máquina) -->
+    <!-- Visor de Binarización -->
     <div class="filter-panel">
-      <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">CONTROLES DE LECTURA ÓPTICA (VISOR B/N)</div>
+      <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">CONTROLES DE VISIÓN ARTIFICIAL (B/N)</div>
       
       <div class="filter-row">
         <label>Brillo</label>
@@ -120,7 +120,7 @@
         <span id="valUmbral">180</span>
       </div>
       <canvas id="bwCanvasPreview" class="preview-bw"></canvas>
-      <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:4px;">Ajuste hasta ver las burbujas pintadas en blanco puro.</div>
+      <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:4px;">Ajuste hasta ver manchas blancas puras sobre fondo negro.</div>
     </div>
 
     <!-- Fotografía Final con Nota -->
@@ -156,13 +156,13 @@
     
     let stream = null; let opencvReady = false; let userPin = "";
     let capturedImage = null; // Foto original guardada
-    let warpedMatBase = null; // Recorte a color original para aplicar filtros encima
+    let warpedMatBase = null; // Recorte a color original
     let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     let arregloRespuestasManuales = [];
 
     // Lógica del Recuadro de Recorte
     let corners = []; 
-    let activeHandle = null; // Puede ser un índice (0-3), "center", o "edge_0-3"
+    let activeHandle = null; 
     let dragOffset = {x:0, y:0};
 
     function onOpenCvReady() { opencvReady = true; }
@@ -174,8 +174,7 @@
     async function iniciarSesion() {
       let pin = document.getElementById("inputPin").value.trim();
       if (!pin) { alert("Por favor, ingrese un PIN"); return; }
-      document.getElementById("btnLogin").innerText = "⏳ Verificando...";
-      document.getElementById("btnLogin").classList.add("btn-disabled");
+      document.getElementById("btnLogin").innerText = "⏳ Verificando..."; document.getElementById("btnLogin").classList.add("btn-disabled");
       try {
         let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); 
         let data = await response.json();
@@ -224,19 +223,19 @@
       iniciarEtapaEncuadre();
     }
 
-    // PASO 2: ENCUADRE INTERACTIVO (Centro, Bordes, Esquinas)
+    // PASO 2: ENCUADRE INTERACTIVO TIPO CAMSCANNER
     function iniciarEtapaEncuadre() {
       switchPanel('panel-crop');
       cropCanvas.width = cropCanvas.clientWidth;
       cropCanvas.height = cropCanvas.clientHeight;
 
       let w = cropCanvas.width; let h = cropCanvas.height;
-      // Posición inicial: Lado derecho de la hoja
+      // Posición inicial: El lado derecho entero donde está la OMR
       corners = [
-        { x: w * 0.55, y: h * 0.15 }, // TL (0)
-        { x: w * 0.95, y: h * 0.15 }, // TR (1)
-        { x: w * 0.95, y: h * 0.85 }, // BR (2)
-        { x: w * 0.55, y: h * 0.85 }  // BL (3)
+        { x: w * 0.58, y: h * 0.12 }, // Superior Izquierda
+        { x: w * 0.96, y: h * 0.12 }, // Superior Derecha
+        { x: w * 0.96, y: h * 0.88 }, // Inferior Derecha
+        { x: w * 0.58, y: h * 0.88 }  // Inferior Izquierda
       ];
       dibujarEncuadre();
     }
@@ -245,26 +244,26 @@
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(capturedImage, 0, 0, cropCanvas.width, cropCanvas.height);
 
-      // Polígono azul translucido
       cropCtx.beginPath();
       cropCtx.moveTo(corners[0].x, corners[0].y);
       for (let i = 1; i < 4; i++) cropCtx.lineTo(corners[i].x, corners[i].y);
       cropCtx.closePath();
+      
+      // Estilo del recuadro
       cropCtx.lineWidth = 3;
       cropCtx.strokeStyle = "#3b82f6";
-      cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)"; // Azulado
+      cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)";
       cropCtx.fill();
       cropCtx.stroke();
 
-      // Esquinas interactivas
+      // Dibuja círculos en las esquinas para arrastrar
       corners.forEach((c) => {
-        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 14, 0, 2 * Math.PI);
+        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 16, 0, 2 * Math.PI);
         cropCtx.fillStyle = "#10b981"; cropCtx.fill();
-        cropCtx.lineWidth = 2; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
+        cropCtx.lineWidth = 3; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
       });
     }
 
-    // LÓGICA DE TOQUE PARA MOVER (Distancia a punto, distancia a línea, punto en polígono)
     function getTouchPos(e) {
       let rect = cropCanvas.getBoundingClientRect();
       let cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -272,7 +271,6 @@
       return { x: cx - rect.left, y: cy - rect.top };
     }
 
-    // Distancia punto a segmento
     function distToSegment(p, v, w) {
       let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
       if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
@@ -281,7 +279,6 @@
       return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
     }
 
-    // Ray-casting para detectar si toca el centro
     function pointInPolygon(point, vs) {
       let x = point.x, y = point.y; let inside = false;
       for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
@@ -292,32 +289,19 @@
       return inside;
     }
 
+    // Interacción Drag & Drop Completa
     cropCanvas.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e);
       activeHandle = null;
 
-      // 1. Toca una esquina?
       for (let i=0; i<4; i++) {
-        if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 30) {
-          activeHandle = i; return;
-        }
+        if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 35) { activeHandle = i; return; }
       }
-
-      // 2. Toca un borde? (Top=0, Right=1, Bottom=2, Left=3)
       for (let i=0; i<4; i++) {
         let j = (i + 1) % 4;
-        if (distToSegment(pos, corners[i], corners[j]) < 25) {
-          activeHandle = `edge_${i}`;
-          dragOffset = pos;
-          return;
-        }
+        if (distToSegment(pos, corners[i], corners[j]) < 25) { activeHandle = `edge_${i}`; dragOffset = pos; return; }
       }
-
-      // 3. Toca el centro?
-      if (pointInPolygon(pos, corners)) {
-        activeHandle = "center";
-        dragOffset = pos;
-      }
+      if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; }
     });
 
     cropCanvas.addEventListener('pointermove', (e) => {
@@ -325,17 +309,15 @@
       let pos = getTouchPos(e);
       let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
 
-      if (typeof activeHandle === 'number') { // Mueve esquina
+      if (typeof activeHandle === 'number') { 
         corners[activeHandle].x = Math.max(0, Math.min(cropCanvas.width, pos.x));
         corners[activeHandle].y = Math.max(0, Math.min(cropCanvas.height, pos.y));
       } 
-      else if (activeHandle === "center") { // Mueve todo el polígono
-        corners.forEach(c => { c.x += dx; c.y += dy; });
-        dragOffset = pos;
+      else if (activeHandle === "center") { 
+        corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos;
       } 
-      else if (activeHandle.startsWith("edge_")) { // Mueve un lado
-        let edgeIdx = parseInt(activeHandle.split("_")[1]);
-        let nextIdx = (edgeIdx + 1) % 4;
+      else if (activeHandle.startsWith("edge_")) { 
+        let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4;
         corners[edgeIdx].x += dx; corners[edgeIdx].y += dy;
         corners[nextIdx].x += dx; corners[nextIdx].y += dy;
         dragOffset = pos;
@@ -345,7 +327,7 @@
 
     window.addEventListener('pointerup', () => { activeHandle = null; });
 
-    // PASO 3: RECORTAR (WARP) E INICIAR ESTUDIO DE IMAGEN
+    // PASO 3: RECORTAR (WARP) E INICIAR LECTURA MATEMÁTICA DE BURBUJAS VACÍAS
     function iniciarFiltrosYEdicion() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
 
@@ -361,10 +343,10 @@
 
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
 
-      // Matriz destino: Opc columnas + 1 num columna. 
+      // La matriz ahora es: opc columnas (+1 por número de pregunta), y cantP filas (+1 por los encabezados ABCD)
       let cellW = 40; let cellH = 35;
       let targetW = (opc + 1) * cellW; 
-      let targetH = cantP * cellH;
+      let targetH = (cantP + 1) * cellH; // +1 fila para los encabezados A, B, C, D
 
       let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, targetW, targetH, 0, targetH]);
 
@@ -376,12 +358,10 @@
       src.delete(); srcTri.delete(); dstTri.delete();
 
       switchPanel('panel-review');
-      
-      // Aplicar filtros la primera vez
       aplicarFiltrosBinarizacion();
     }
 
-    // EL VISOR B/N Y CÁLCULO DE BURBUJAS
+    // EL VISOR B/N Y CÁLCULO INVERSO (BURBUJAS VACÍAS)
     function aplicarFiltrosBinarizacion() {
       let valB = parseInt(document.getElementById('slBrillo').value);
       let valC = parseInt(document.getElementById('slContraste').value) / 10;
@@ -394,20 +374,16 @@
       let gray = new cv.Mat();
       cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      // Aplicar Brillo y Contraste: new_pixel = pixel * contrast + brightness
       let adjusted = new cv.Mat();
       gray.convertTo(adjusted, -1, valC, valB);
 
-      // Binarización INVERSA: Las sombras quedan en Blanco (255), el fondo en Negro (0)
+      // BINARIZACIÓN INVERSA: Todo lo blanco se hace negro(0). Lo gris del lápiz se hace blanco puro(255).
       let binarized = new cv.Mat();
       cv.threshold(adjusted, binarized, valU, 255, cv.THRESH_BINARY_INV);
 
-      // Mostrar lo que ve la máquina en el Mini-Canvas
       cv.imshow(bwCanvas, binarized);
 
-      // Leer la Matriz de Respuestas
       leerRespuestasDeBinarizado(binarized);
-      
       gray.delete(); adjusted.delete(); binarized.delete();
     }
 
@@ -421,8 +397,8 @@
         let maxBlancos = 0; let idxM = -1;
 
         for (let c = 0; c < opc; c++) {
-          let cx = (c + 1) * cellW + (cellW / 2); // Salta col num
-          let cy = r * cellH + (cellH / 2);
+          let cx = (c + 1) * cellW + (cellW / 2); 
+          let cy = (r + 1) * cellH + (cellH / 2); // r+1 salta matemáticamente la fila de encabezados A B C D
           
           let scanW = 20; let scanH = 20;
           let rx = Math.max(0, cx - scanW/2); let ry = Math.max(0, cy - scanH/2);
@@ -433,7 +409,7 @@
           let pixelCount = cv.countNonZero(roi);
           roi.delete();
 
-          // Umbral de sensibilidad: > 10% del cuadrito (40 pixeles)
+          // Como la burbuja está Vacia, si encuentra 10% de pixeles blancos(lápiz), es un acierto rotundo.
           if (pixelCount > maxBlancos && pixelCount > (scanW * scanH * 0.10)) {
             maxBlancos = pixelCount;
             idxM = c;
@@ -462,7 +438,7 @@
         let optString = opts.map(o => `<option value="${o}" ${o===lM?'selected':''}>${o}</option>`).join("");
         let classColor = esCorrecta ? 'c-ok' : 'c-err';
 
-        html += `<div class="edit-row"><span class="${classColor}">P${i+1}. (Correcta: ${lC})</span><select onchange="actualizarRespuestaManual(${i}, this.value)">${optString}</select></div>`;
+        html += `<div class="edit-row"><span class="${classColor}">Pregunta ${i+1} (Correcta: ${lC})</span><select onchange="actualizarRespuestaManual(${i}, this.value)">${optString}</select></div>`;
       }
 
       document.getElementById('editorFilas').innerHTML = html;
@@ -473,7 +449,6 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Dibujar la foto congelada grande
       canvasFinal.width = capturedImage.width; canvasFinal.height = capturedImage.height;
       ctxFinal.drawImage(capturedImage, 0, 0);
 
@@ -502,7 +477,8 @@
     }
 
     async function enviarCalificacion() {
-      document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
+      document.getElementById('reviewButtons').style.display = 'none';
+      document.getElementById('loaderUpload').style.display = 'block';
 
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
@@ -521,7 +497,11 @@
       try {
         let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
         let result = await res.json();
-        if (result.status === "success") { guardarImagenLocal(finalBase64, finalFileName); showNotif("¡Nota enviada a Sheets y Foto descargada!"); setTimeout(() => { switchPanel('panel-config'); }, 2200); } 
+        if (result.status === "success") { 
+          guardarImagenLocal(finalBase64, finalFileName); 
+          showNotif("¡Nota enviada y Foto descargada!"); 
+          setTimeout(() => { switchPanel('panel-config'); }, 2200); 
+        } 
         else throw new Error(result.message);
       } catch (e) { alert("Error al subir a Sheets: " + e.message); document.getElementById('reviewButtons').style.display = 'block'; } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
