@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Matriz Matemática</title>
+  <title>OMR Scanner Pro - Precision Matriz</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -21,7 +21,7 @@
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CONTAIN (Sin recortes ni guías) */
+    /* CÁMARA CONTAIN (Vista completa 100% real sin cortes) */
     .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
     .camera-container::before { content: ""; display: block; padding-top: 133%; }
     video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
@@ -53,7 +53,7 @@
 
   <!-- PANEL 2 -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Enfoque bien la hoja...</div>
+    <div class="info-text" id="infoScanText">Aleje el teléfono para ver toda la hoja...</div>
     <div class="camera-container">
       <video id="videoElement" autoplay playsinline></video>
     </div>
@@ -131,11 +131,11 @@
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      // Threshold Adaptativo
+      // Usar Otsu general (más limpio para grafito si la luz es buena)
       let thresh = new cv.Mat();
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
 
-      // Analizar solo la mitad derecha de la foto (donde suele estar el OMR)
+      // Analizar zona derecha (OMR)
       let roiStartX = Math.floor(canvas.width * 0.45);
       let roiWidth = canvas.width - roiStartX;
       let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
@@ -144,7 +144,7 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Buscar todos los círculos (Burbujas OMR)
+      // Buscar Círculos
       let burbujas = [];
       let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
       let sumW = 0, sumH = 0;
@@ -155,11 +155,10 @@
         let area = cv.contourArea(cnt);
         let perimeter = cv.arcLength(cnt, true);
         
-        // Circularidad
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
         
-        // Si es un circulo razonable, lo guardamos para calcular el área total del OMR
-        if (area > 150 && area < 6000 && circularity > 0.65) {
+        // Las burbujas son grandes (área amplia) y toleramos elipses leves (0.55+)
+        if (area > 150 && area < 8000 && circularity > 0.55) {
           burbujas.push(r);
           if (r.x < minX) minX = r.x;
           if (r.y < minY) minY = r.y;
@@ -173,16 +172,13 @@
       let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      // Validar si encontramos al menos algunas burbujas para hacer la matriz
       if (burbujas.length < (cantP * opc) / 3) {
         reviewWarning.style.display = 'block';
       } else { reviewWarning.style.display = 'none'; }
 
-      // Promedio del tamaño de burbuja
       let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
       let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
 
-      // Calcular la Cuadrícula Matemática
       let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
       let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
 
@@ -195,7 +191,6 @@
         for (let j = 0; j < opc; j++) {
           let xCenter = minX + (j * colWidth) + (avgW / 2);
           
-          // Crear un recuadro de escaneo alrededor del centro proyectado
           let scanW = avgW * 1.2; let scanH = avgH * 1.2;
           let rx = Math.max(0, xCenter - scanW/2);
           let ry = Math.max(0, yCenter - scanH/2);
@@ -205,8 +200,8 @@
           let p = cv.countNonZero(roiB);
           roiB.delete();
 
-          // Umbral de relleno para considerarla marcada
-          if (p > maxP && p > (scanW * scanH * 0.25)) { maxP = p; idxM = j; }
+          // REDUCCIÓN DEL UMBRAL A 15%: Ahora detectará sombreados a lápiz ligeros
+          if (p > maxP && p > (scanW * scanH * 0.15)) { maxP = p; idxM = j; }
         }
 
         let lResp = ["A", "B", "C", "D"]; 
@@ -217,11 +212,10 @@
         if (lM === lC) aciertos++; else incorrectasArray.push(i+1);
         detalleArray.push(`${i+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
 
-        // Dibujar en el canvas original para mostrar al maestro (sumamos el roiStartX)
         if (idxM >= 0) {
           let markX = roiStartX + minX + (idxM * colWidth) + (avgW / 2);
           let markY = minY + (i * rowHeight) + (avgH / 2);
-          ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+          ctx.beginPath(); ctx.lineWidth=8; ctx.strokeStyle=color;
           ctx.arc(markX, markY, avgW/2 + 10, 0, 2*Math.PI); ctx.stroke();
         }
       }
@@ -234,7 +228,6 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Nota visual
       ctx.font = "bold 130px Arial"; ctx.fillStyle = "red"; ctx.fillText(`NOTA: ${notaSobre100}/100`, 50, 150);
       ctx.lineWidth = 6; ctx.strokeStyle = "white"; ctx.strokeText(`NOTA: ${notaSobre100}/100`, 50, 150);
       ctx.font = "bold 80px Arial"; ctx.fillStyle = "#38bdf8"; ctx.fillText(`(${aciertos} correctas de ${cantP})`, 50, 260);
