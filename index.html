@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Bullseye Matrix</title>
+  <title>OMR Scanner Pro - Editor Manual</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -22,6 +22,7 @@
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
+    /* CÁMARA TAMAÑO CARTA Y TOQUE PARA ENFOCAR */
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
     video { width: 100%; height: 100%; object-fit: cover; } 
     canvas { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
@@ -29,8 +30,13 @@
     .overlay-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
     .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.95rem; text-shadow: 1px 1px 4px #000; z-index: 20;}
 
-    #feedbackList { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 15px; border: 1px solid #334155; }
-    .fb-item { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #334155; }
+    /* MÓDULO DE EDICIÓN MANUAL */
+    #manualEditor { background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3b82f6; }
+    .editor-title { font-size: 1rem; font-weight: bold; color: #f8fafc; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #334155; padding-bottom: 5px;}
+    .edit-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 6px; background: #0f172a; border-radius: 6px;}
+    .edit-row span { font-size: 0.9rem; font-weight: bold; }
+    .edit-row select { width: 80px; padding: 6px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 4px; font-weight: bold; font-size: 1rem; text-align: center; }
+    .c-ok { color: #10b981; } .c-err { color: #ef4444; }
 
     .loader { text-align: center; padding: 20px; color: #38bdf8; font-weight: bold; display: none; }
     #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100;}
@@ -59,7 +65,7 @@
   <div id="panel-config" class="panel">
     <div class="card" id="selectionCard" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <span style="color:#10b981; font-weight:bold; font-size:0.85rem;">✔️ Conectado</span>
+        <span style="color:#10b981; font-weight:bold; font-size:0.85rem;">✔️ Conectado y Seguro</span>
         <button onclick="cerrarSesion()" style="background:transparent; border:1px solid #ef4444; color:#ef4444; padding:5px 10px; border-radius:5px; cursor:pointer;">Cerrar Sesión</button>
       </div>
       <label>1. Seleccionar Examen</label><select id="selExamen" onchange="actualizarListaEstudiantes()"><option value="">-- Elija un examen --</option></select>
@@ -68,9 +74,9 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA (Recorte Automático + AR Overlay) -->
+  <!-- PANEL 2: CÁMARA -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Llene el recuadro verde con la hoja...</div>
+    <div class="info-text" id="infoScanText">Toque el video para enfocar. Llene el recuadro verde.</div>
     <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
       <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
@@ -80,13 +86,21 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: REVISIÓN DE IMAGEN -->
+  <!-- PANEL 3: REVISIÓN DE IMAGEN Y EDICIÓN -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ Lectura incompleta. Revisa la luz o la posición de la hoja.</div>
-    <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
+    <div id="reviewWarning">⚠️ Lectura incompleta. Revisa la luz o si la hoja está muy chueca.</div>
+    <div class="info-text" style="color: #fbbf24;">Si el alumno se equivocó, edite las respuestas manualmente:</div>
+    
     <canvas id="canvasResult"></canvas>
-    <div id="feedbackList"></div>
+    
+    <!-- MÓDULO EDITOR MANUAL -->
+    <div id="manualEditor">
+      <div class="editor-title">✏️ EDICIÓN MANUAL DE RESPUESTAS</div>
+      <div id="editorFilas"></div>
+    </div>
+
     <div class="loader" id="loaderUpload">⏳ Guardando en Sheets y descargando foto...</div>
+    
     <div id="reviewButtons">
       <button class="btn btn-success" onclick="enviarCalificacion()">📥 Confirmar y Descargar Foto</button>
       <button class="btn btn-danger" onclick="reintentarFoto()">🔄 Retomar Foto</button>
@@ -97,13 +111,16 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzhP3xdvh7tly9_DzW7wupinw3O0Oxovi1iJVpOj2viHYpQRdtPDO6AplOc66V-ATqp7A/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxxHSxL1oZF_1i0SruaSFtiJNWGTC7bHHXQl_IQWXB0ZrAQHU08N5V2hFLbZtKzcdMR/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
     let overlayCanvas = document.getElementById('overlayCanvas'); let ctxOverlay = overlayCanvas.getContext('2d');
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
+    
     let userPin = ""; let scanningInterval = null;
+    let originalImageMat = null; // Guardar la foto original para repintar notas
+    let arregloRespuestasManuales = []; // Array vivo de respuestas detectadas [ "A", "BLANCO", "C" ]
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
@@ -127,7 +144,7 @@
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
         
         document.getElementById('selectionCard').style.display = 'block'; switchPanel('panel-config'); showNotif("✅ Acceso Concedido");
-      } catch (err) { alert("Error de conexión. Revise su internet o la URL del script."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
+      } catch (err) { alert("Error de conexión. Revise su internet."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
     }
 
     function cerrarSesion() { userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = ""; document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); document.getElementById('selectionCard').style.display = 'none'; switchPanel('panel-login'); }
@@ -142,6 +159,7 @@
       } else { document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled'); }
     }
 
+    // TOQUE PARA ENFOCAR
     video.addEventListener('click', async () => {
       if (!stream) return;
       const track = stream.getVideoTracks()[0];
@@ -166,54 +184,7 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // ==========================================
-    // MAGIA OPENCV: BÚSQUEDA DE DIANAS (BULLSEYES)
-    // ==========================================
-    function getTargetsFromImage(srcMat) {
-      let gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY, 0);
-      let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
-
-      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
-      // RETR_TREE permite encontrar contornos anidados (como la diana de 3 anillos)
-      cv.findContours(thresh, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
-
-      let targets = [];
-      for (let i = 0; i < contours.size(); ++i) {
-        let h = hierarchy.intPtr(0, i);
-        let child = h[2];
-        if (child !== -1) {
-          let hChild = hierarchy.intPtr(0, child);
-          let grandChild = hChild[2];
-          if (grandChild !== -1) {
-            // Contorno de 3 niveles de profundidad (Negro exterior > Blanco medio > Negro interior)
-            let cnt = contours.get(i);
-            let area = cv.contourArea(cnt);
-            if (area > 30 && area < 8000) { // Tamaño razonable
-              let peri = cv.arcLength(cnt, true);
-              let circularity = (4 * Math.PI * area) / (peri * peri);
-              if (circularity > 0.4) { // Es más o menos redondo
-                let M = cv.moments(cnt);
-                if (M.m00 > 0) {
-                  let cx = M.m10 / M.m00; let cy = M.m01 / M.m00;
-                  targets.push({ x: cx, y: cy });
-                }
-              }
-            }
-          }
-        }
-      }
-
-      let uniqueTargets = [];
-      targets.forEach(t => {
-        let duplicate = uniqueTargets.find(ut => Math.abs(ut.x - t.x) < 20 && Math.abs(ut.y - t.y) < 20);
-        if (!duplicate) uniqueTargets.push(t);
-      });
-
-      gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
-      return uniqueTargets;
-    }
-
-    // REALIDAD AUMENTADA EN VIVO
+    // REALIDAD AUMENTADA EN VIVO (Detecta los 4 cuadros negros sólidos)
     function processLiveAR() {
       if (!opencvReady || !video.videoWidth) return;
       overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
@@ -222,23 +193,35 @@
       
       try {
         let src = cv.imread(overlayCanvas);
-        let targets = getTargetsFromImage(src);
-        ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
-        if (targets.length >= 4) {
-          // Ordenar esquinas
-          targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
-          targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
+        let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
+        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let squares = [];
+        for (let i = 0; i < contours.size(); ++i) {
+          let cnt = contours.get(i); let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt);
+          let extent = area / (r.width * r.height); let aspect = r.width / r.height;
+          // Cuadros negros sólidos: Extent muy alto y area regular
+          if (area > 150 && area < 5000 && aspect > 0.8 && aspect < 1.2 && extent > 0.8 && r.x > src.cols * 0.4) {
+            squares.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
+          }
+        }
+        
+        ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (squares.length >= 4) {
+          squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
+          squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
           
-          // Dibuja un marco verde guiando al usuario
           ctxOverlay.beginPath(); ctxOverlay.moveTo(tl.x, tl.y); ctxOverlay.lineTo(tr.x, tr.y); ctxOverlay.lineTo(br.x, br.y); ctxOverlay.lineTo(bl.x, bl.y); ctxOverlay.closePath();
           ctxOverlay.lineWidth = 4; ctxOverlay.strokeStyle = "rgba(16, 185, 129, 0.8)"; ctxOverlay.stroke();
         }
-        src.delete();
+        src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
       } catch(e) {}
     }
 
-    // CAPTURA Y MATRIZ MATEMÁTICA
+    // CAPTURA, MATRIZ GEOMÉTRICA Y GRISES
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
       clearInterval(scanningInterval);
@@ -258,97 +241,162 @@
       switchPanel('panel-review');
 
       let src = cv.imread(canvas);
-      let targets = getTargetsFromImage(src);
-      let reviewWarning = document.getElementById('reviewWarning');
+      if (originalImageMat) originalImageMat.delete();
+      originalImageMat = src.clone(); // Guardamos para redibujar la nota encima
+
+      let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+      let thresh = new cv.Mat();
+      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+
+      let roiStartX = Math.floor(cropW * 0.40);
+      let roiWidth = cropW - roiStartX;
+      let rect = new cv.Rect(roiStartX, 0, roiWidth, cropH);
+      let roiThresh = thresh.roi(rect);
+
+      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
+      cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      let squares = [];
+      for (let i = 0; i < contours.size(); ++i) {
+        let cnt = contours.get(i);
+        let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt); let aspect = r.width / r.height;
+        let extent = area / (r.width * r.height);
+        
+        // 4 Cuadros sólidos
+        if (area > 150 && area < 6000 && aspect > 0.8 && aspect < 1.2 && extent > 0.8) {
+          squares.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
+        }
+      }
 
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
+      let reviewWarning = document.getElementById('reviewWarning');
 
-      if (targets.length < 4) {
+      if (squares.length < 4) {
         reviewWarning.style.display = 'block';
+        arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
       } else { 
         reviewWarning.style.display = 'none'; 
         
-        targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
-        targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
+        squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
+        squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
 
-        // Aplanar perspectiva 
-        let cellW = 50; let cellH = 40; 
-        // HTML: El ancho total es 1 col para números + opc columnas para letras
-        let targetW = (opc + 1) * cellW; 
-        let targetH = cantP * cellH;
-        
+        // Creación Matriz Perfecta de las burbujas (Ancho x Alto)
+        let W = opc * 50; let H = cantP * 50; let pad = 30;
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
-        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, 0, targetH, targetW, targetH]);
+        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [pad, pad, W+pad, pad, pad, H+pad, W+pad, H+pad]);
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
         
-        let warped = new cv.Mat(); let size = new cv.Size(targetW, targetH);
-        cv.warpPerspective(src, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+        // Aquí escaneamos en Escala de GRISES (gray) en vez del Threshold, porque el Gris lee intensidad de lápiz!
+        let warpedGray = new cv.Mat(); let size = new cv.Size(W + pad*2, H + pad*2);
+        let roiGray = gray.roi(rect);
+        cv.warpPerspective(roiGray, warpedGray, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
 
-        let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY, 0);
-        let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+        arregloRespuestasManuales = [];
 
-        let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
-        let feedbackHTML = `<div style="text-align:center; font-weight:bold; margin-bottom:8px; color:white;">DETALLE DE EVALUACIÓN:</div>`;
-
+        // Leer cada burbuja buscando la "Más oscura" (Menor promedio de color)
         for (let r = 0; r < cantP; r++) {
-          let maxP = 0; let idxM = -1;
+          let minColor = 255; let idxM = -1;
           for (let c = 0; c < opc; c++) {
-            // Saltamos la columna 0 que es para la numeración de las preguntas
-            let cx = (c + 1) * cellW + (cellW / 2); 
-            let cy = r * cellH + (cellH / 2);
+            let cx = c * 50 + pad; let cy = r * 50 + pad;
+            let cellRect = new cv.Rect(cx - 12, cy - 12, 24, 24); 
+            let roiC = warpedGray.roi(cellRect);
             
-            let roiC = thresh.roi(new cv.Rect(cx - 12, cy - 12, 24, 24));
-            let p = cv.countNonZero(roiC);
+            // Calculamos la luz promedio de esa zona (0=Negro, 255=Blanco)
+            let meanColor = cv.mean(roiC).val[0]; 
             roiC.delete();
             
-            // Sensibilidad alta para lápiz claro (Si llena > 15% del cuadrito)
-            if (p > maxP && p > (24 * 24 * 0.15)) { maxP = p; idxM = c; }
+            // Si es más oscuro que el fondo (ej. < 190) y es el más oscuro de todos
+            if (meanColor < minColor && meanColor < 190) { 
+              minColor = meanColor; 
+              idxM = c; 
+            }
           }
 
-          let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; let lC = clave[r];
-          let color = (lM === lC) ? "green" : "red";
-          
-          if (lM === lC) { aciertos++; feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Preg. ${r+1}: Marcó ${lM}</div>`; } 
-          else { incorrectasArray.push(r+1); feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Preg. ${r+1}: Marcó ${lM} (Era ${lC})</div>`; }
-          detalleArray.push(`${r+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
-
-          // Dibujar usando perspectiva inversa
-          if (idxM >= 0) {
-            let M_inv = cv.getPerspectiveTransform(dstTri, srcTri);
-            let cx = (idxM + 1) * cellW + (cellW / 2); let cy = r * cellH + (cellH / 2);
-            let ptMat = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]); let outMat = new cv.Mat();
-            cv.perspectiveTransform(ptMat, outMat, M_inv);
-            let origX = outMat.data32F[0]; let origY = outMat.data32F[1];
-            
-            ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
-            ctx.arc(origX, origY, 20, 0, 2*Math.PI); ctx.stroke();
-            ptMat.delete(); outMat.delete(); M_inv.delete();
-          }
+          let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO";
+          arregloRespuestasManuales.push(lM);
         }
-        
-        document.getElementById('feedbackList').innerHTML = feedbackHTML;
-        let notaSobre100 = Math.round((aciertos / cantP) * 100);
-        dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-        ctx.font = "bold 65px Arial"; let textoNota = `NOTA: ${notaSobre100}/100`; let anchoTexto = ctx.measureText(textoNota).width;
-        let posX = canvas.width - anchoTexto - 30; let posY = 80; 
-        ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY); ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
-
-        ctx.font = "bold 35px Arial"; let textoAciertos = `(${aciertos} aciertos)`; let anchoSub = ctx.measureText(textoAciertos).width;
-        let posXSub = canvas.width - anchoSub - 30; let posYSub = posY + 40;
-        ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub); ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
-
-        srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); gray.delete(); thresh.delete();
+        srcTri.delete(); dstTri.delete(); M.delete(); warpedGray.delete(); roiGray.delete();
       }
 
-      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-      src.delete(); 
+      // Generar el Panel de Edición en Vivo y Calcular Nota
+      generarEditorManualYCalcular();
+
+      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
 
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
+    }
+
+    // ==========================================
+    // CÁLCULO Y EDITOR MANUAL (RECARGABLE)
+    // ==========================================
+    function generarEditorManualYCalcular() {
+      let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
+      let htmlEditor = ""; let aciertos = 0; let detalleArray = []; let incorrectasArray = [];
+
+      for (let i = 0; i < cantP; i++) {
+        let lC = clave[i];
+        let lM = arregloRespuestasManuales[i];
+        
+        let esCorrecta = (lM === lC);
+        if (esCorrecta) aciertos++; else incorrectasArray.push(i+1);
+        detalleArray.push(`${i+1}:${lM}(${esCorrecta?'OK':'❌'+lC})`);
+
+        // Selector HTML para esa pregunta
+        let opts = ["A", "B", "C", "D"].slice(0, opc);
+        opts.push("BLANCO");
+        let optString = opts.map(o => `<option value="${o}" ${o===lM?'selected':''}>${o}</option>`).join("");
+        
+        let classColor = esCorrecta ? 'c-ok' : 'c-err';
+        
+        htmlEditor += `
+          <div class="edit-row">
+            <span class="${classColor}">P${i+1}. (Resp: ${lC})</span>
+            <select id="edit_q_${i}" onchange="actualizarRespuesta(${i}, this.value)">
+              ${optString}
+            </select>
+          </div>
+        `;
+      }
+
+      document.getElementById("editorFilas").innerHTML = htmlEditor;
+
+      let notaSobre100 = Math.round((aciertos / cantP) * 100);
+      dataEvaluacion = {
+        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP,
+        nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
+        preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
+      };
+
+      // DIBUJAMOS LA NOTA SOBRE EL CANVAS CON FONDO NEGRO PARA TAPAR SI HAY CAMBIOS
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // Restaura foto
+      
+      let textoNota = `NOTA: ${notaSobre100}/100`;
+      ctx.font = "bold 65px Arial"; let anchoTexto = ctx.measureText(textoNota).width;
+      let posX = canvas.width - anchoTexto - 30; let posY = 80; 
+
+      // Fondo oscuro para que la nota resalte impecable
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(posX - 20, posY - 70, anchoTexto + 40, 130);
+
+      ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY);
+      ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
+
+      ctx.font = "bold 35px Arial"; let textoAciertos = `(${aciertos} aciertos)`; let anchoSub = ctx.measureText(textoAciertos).width;
+      let posXSub = canvas.width - anchoSub - 30; let posYSub = posY + 40;
+      ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub); ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
+
+      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    }
+
+    // Si el profe cambia un Dropdown, se recalcula al instante
+    function actualizarRespuesta(idxPregunta, nuevoValor) {
+      arregloRespuestasManuales[idxPregunta] = nuevoValor;
+      generarEditorManualYCalcular();
     }
 
     function guardarImagenLocal(base64, filename) {
