@@ -21,7 +21,6 @@
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CONTAIN (Vista completa sin recortes) */
     .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
     .camera-container::before { content: ""; display: block; padding-top: 133%; }
     video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
@@ -83,7 +82,7 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWhHUPw_DM9N98rJyOzNVq7gH94tsXJKN5uJJ19YXMvtpc3BlnkBAyGUqOjjZfnMknag/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxxiBrwHmQ9IbY9kz18g112faRJR8BLB7ZswfERbYURkXwVvA88GkxkOEoEvlqLKaV6Kg/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
@@ -119,14 +118,11 @@
       switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
       try { 
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } }); 
-        
-        // Intentar autoenfoque
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities();
         if (caps.focusMode && caps.focusMode.includes("continuous")) {
             await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
         }
-        
         video.srcObject = stream; 
       } 
       catch (err) { alert("Permita acceso a la cámara."); }
@@ -136,9 +132,6 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); }
 
-    // ==========================================
-    // ANÁLISIS DE MATRIZ MATEMÁTICA CON OPENCV
-    // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
@@ -147,12 +140,9 @@
 
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-
-      // Usar Otsu general (más limpio para grafito si la luz es buena)
       let thresh = new cv.Mat();
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
-      // Analizar zona derecha (OMR)
       let roiStartX = Math.floor(canvas.width * 0.45);
       let roiWidth = canvas.width - roiStartX;
       let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
@@ -161,7 +151,6 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Buscar Círculos
       let burbujas = [];
       let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
       let sumW = 0, sumH = 0;
@@ -171,15 +160,12 @@
         let r = cv.boundingRect(cnt);
         let area = cv.contourArea(cnt);
         let perimeter = cv.arcLength(cnt, true);
-        
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
         
         if (area > 150 && area < 8000 && circularity > 0.55) {
           burbujas.push(r);
-          if (r.x < minX) minX = r.x;
-          if (r.y < minY) minY = r.y;
-          if (r.x + r.width > maxX) maxX = r.x + r.width;
-          if (r.y + r.height > maxY) maxY = r.y + r.height;
+          if (r.x < minX) minX = r.x; if (r.y < minY) minY = r.y;
+          if (r.x + r.width > maxX) maxX = r.x + r.width; if (r.y + r.height > maxY) maxY = r.y + r.height;
           sumW += r.width; sumH += r.height;
         }
       }
@@ -194,7 +180,6 @@
 
       let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
       let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
-
       let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
       let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
 
@@ -207,10 +192,8 @@
 
         for (let j = 0; j < opc; j++) {
           let xCenter = minX + (j * colWidth) + (avgW / 2);
-          
           let scanW = avgW * 1.2; let scanH = avgH * 1.2;
-          let rx = Math.max(0, xCenter - scanW/2);
-          let ry = Math.max(0, yCenter - scanH/2);
+          let rx = Math.max(0, xCenter - scanW/2); let ry = Math.max(0, yCenter - scanH/2);
           
           let scanRect = new cv.Rect(rx, ry, scanW, scanH);
           let roiB = roiThresh.roi(scanRect);
@@ -220,17 +203,13 @@
           if (p > maxP && p > (scanW * scanH * 0.15)) { maxP = p; idxM = j; }
         }
 
-        let lResp = ["A", "B", "C", "D"]; 
-        let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; 
-        let lC = clave[i];
+        let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; let lC = clave[i];
         
         let color = (lM === lC) ? "green" : "red";
         if (lM === lC) { 
-          aciertos++; 
-          feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Pregunta ${i+1}: Marcó ${lM} (Correcto)</div>`;
+          aciertos++; feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Pregunta ${i+1}: Marcó ${lM} (Correcto)</div>`;
         } else { 
-          incorrectasArray.push(i+1); 
-          feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Pregunta ${i+1}: Marcó ${lM} (Era ${lC})</div>`;
+          incorrectasArray.push(i+1); feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Pregunta ${i+1}: Marcó ${lM} (Era ${lC})</div>`;
         }
         detalleArray.push(`${i+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
 
@@ -243,7 +222,6 @@
       }
       
       document.getElementById('feedbackList').innerHTML = feedbackHTML;
-
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
 
       dataEvaluacion = {
@@ -252,31 +230,28 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // DIBUJAR NOTA MITAD DE TAMAÑO EN LA ESQUINA SUPERIOR DERECHA
-      ctx.font = "bold 65px Arial";
+      // ========================================================
+      // DISEÑO DE NOTA: ESQUINA SUPERIOR DERECHA Y MÁS PEQUEÑA
+      // ========================================================
+      ctx.font = "bold 50px Arial";
       let textoNota = `NOTA: ${notaSobre100}/100`;
       let anchoTexto = ctx.measureText(textoNota).width;
-      let xPos = canvas.width - anchoTexto - 30; // 30px margen derecho
-      let yPos = 80; // 80px margen superior
+      
+      // Coordenadas calculadas para anclar arriba a la derecha
+      let posX = canvas.width - anchoTexto - 20; 
+      let posY = 60; 
 
-      ctx.fillStyle = "red"; 
-      ctx.fillText(textoNota, xPos, yPos);
-      ctx.lineWidth = 3; 
-      ctx.strokeStyle = "white"; 
-      ctx.strokeText(textoNota, xPos, yPos);
+      ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY);
+      ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
 
-      // Dibujar subtexto aciertos debajo de la nota
-      ctx.font = "bold 35px Arial"; 
+      ctx.font = "bold 30px Arial"; 
       let textoAciertos = `(${aciertos} correctas de ${cantP})`;
       let anchoSub = ctx.measureText(textoAciertos).width;
-      let xPosSub = canvas.width - anchoSub - 30;
-      let yPosSub = yPos + 40;
+      let posXSub = canvas.width - anchoSub - 20;
+      let posYSub = posY + 35;
 
-      ctx.fillStyle = "#38bdf8"; 
-      ctx.fillText(textoAciertos, xPosSub, yPosSub);
-      ctx.lineWidth = 2; 
-      ctx.strokeStyle = "black"; 
-      ctx.strokeText(textoAciertos, xPosSub, yPosSub);
+      ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub);
+      ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
 
       finalBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
