@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Concentric Match</title>
+  <title>OMR Scanner Pro - Precision Focus</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -20,7 +20,7 @@
 
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
-    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-blue { background: #0284c7; border: 2px solid #0369a1; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
     video { width: 100%; height: 100%; object-fit: cover; } 
@@ -34,8 +34,12 @@
     .edit-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 6px; background: #0f172a; border-radius: 6px;}
     .edit-row span { font-size: 0.9rem; font-weight: bold; }
     .edit-row select { width: 90px; padding: 8px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 4px; font-weight: bold; font-size: 1rem; text-align: center; outline: none; }
-    .edit-row select:focus { border-color: #3b82f6; }
     .c-ok { color: #10b981; } .c-err { color: #ef4444; }
+
+    /* Estilo del Slider */
+    .slider-container { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+    input[type=range] { flex: 1; accent-color: #3b82f6; }
+    .val-badge { background: #334155; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }
 
     .loader { text-align: center; padding: 20px; color: #38bdf8; font-weight: bold; display: none; }
     #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100;}
@@ -73,9 +77,19 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA (FULL PAGE) -->
+  <!-- PANEL 2: CÁMARA (FULL PAGE + CONTROLES DE PANTALLA) -->
   <div id="panel-camera" class="panel">
     <div class="info-text" id="infoScanText">Encuadre toda la hoja en el margen.</div>
+    
+    <button id="btnModo" class="btn btn-blue" onclick="toggleModo()">Modo Lectura: 📄 PAPEL</button>
+    
+    <label style="font-size: 0.85rem; color: #94a3b8; font-weight: bold;">Sensibilidad a marcas de lápiz:</label>
+    <div class="slider-container">
+      <span class="val-badge">Exigente</span>
+      <input type="range" id="sliderSens" min="100" max="230" value="185" oninput="document.getElementById('valSens').innerText=this.value">
+      <span class="val-badge">Suave (<span id="valSens">185</span>)</span>
+    </div>
+
     <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
       <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
@@ -90,10 +104,9 @@
     <div id="reviewWarning">⚠️ La lectura automática falló. Por favor, edite las notas manualmente guiándose por la foto.</div>
     <div class="info-text" style="color: #fbbf24;">Si el alumno se equivocó, edite las respuestas:</div>
     
-    <!-- Canvas donde se muestra la foto capturada -->
+    <!-- Canvas donde se muestra la foto capturada completa -->
     <canvas id="canvasResult"></canvas>
     
-    <!-- MÓDULO EDITOR MANUAL ROBUSTO -->
     <div id="manualEditor">
       <div class="editor-title">✏️ EDICIÓN MANUAL DE RESPUESTAS</div>
       <div id="editorFilas"></div>
@@ -119,13 +132,31 @@
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     
     let userPin = ""; let scanningInterval = null;
-    let originalImageMat = null; // Guardar la foto original intacta
+    let originalImageMat = null; 
     let arregloRespuestasManuales = []; 
-    let MatrizPerspectivaInversa = null; // Guardamos la matriz para redibujar si está disponible
+    let MatrizPerspectivaInversa = null; 
+    let cropStartX = 0;
+    
+    // Control de Modo Pantalla vs Papel
+    let modoPantalla = false;
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
     function switchPanel(pid) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(pid).classList.add('active'); window.scrollTo(0,0); }
+
+    function toggleModo() {
+      modoPantalla = !modoPantalla;
+      let btn = document.getElementById('btnModo');
+      if (modoPantalla) {
+        btn.innerText = "Modo Lectura: 💻 PANTALLA LED";
+        btn.style.background = "#ea580c"; btn.style.borderColor = "#c2410c";
+        showNotif("Filtro Moiré Activado", "#ea580c");
+      } else {
+        btn.innerText = "Modo Lectura: 📄 PAPEL";
+        btn.style.background = "#0284c7"; btn.style.borderColor = "#0369a1";
+        showNotif("Filtro Normal Activado");
+      }
+    }
 
     window.onload = () => { let savedPin = localStorage.getItem("omr_pin"); if(savedPin) { document.getElementById("inputPin").value = savedPin; } };
 
@@ -182,10 +213,16 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // DETECCIÓN DE PATRONES CONCÉNTRICOS MÁS FLEXIBLE
+    // DETECCIÓN DE PATRONES CONCÉNTRICOS ("Cuadrado dentro de Cuadrado")
     function getFinderPatterns(srcMat) {
       let gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY, 0);
-      let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+      let processed = new cv.Mat();
+      
+      // Aplicar filtro Moiré si está en Modo Pantalla
+      if (modoPantalla) { cv.GaussianBlur(gray, processed, new cv.Size(9, 9), 0); } 
+      else { gray.copyTo(processed); }
+
+      let thresh = new cv.Mat(); cv.adaptiveThreshold(processed, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(thresh, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
@@ -197,18 +234,17 @@
         if (child !== -1) {
           let hChild = hierarchy.intPtr(0, child);
           let grandChild = hChild[2];
-          // 3 niveles de profundidad (Patrón Concéntrico)
           if (grandChild !== -1) { 
             let cnt = contours.get(i); let area = cv.contourArea(cnt);
             let r = cv.boundingRect(cnt); let aspect = r.width / r.height;
-            // FLEXIBLE: Área desde muy pequeña (40) por si está lejos, y permite cierta deformación de perspectiva (aspect 0.5 a 1.8)
-            if (area > 40 && area < 10000 && aspect > 0.5 && aspect < 1.8 && r.x > srcMat.cols * 0.3) {
+            // Tolerancia amplia para patrones grandes de esquinas
+            if (area > 200 && area < 12000 && aspect > 0.5 && aspect < 1.8 && r.x > srcMat.cols * 0.3) {
               patterns.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
             }
           }
         }
       }
-      gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      gray.delete(); processed.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
       
       let unique = [];
       patterns.forEach(p => { if (!unique.find(u => Math.abs(u.x - p.x) < 20 && Math.abs(u.y - p.y) < 20)) unique.push(p); });
@@ -240,7 +276,7 @@
 
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      clearInterval(scanningInterval); // Detener el AR
+      clearInterval(scanningInterval); 
 
       const wrapper = document.getElementById('cameraWrapper');
       const wRatio = wrapper.clientWidth / wrapper.clientHeight;
@@ -254,22 +290,18 @@
       canvas.width = cropW; canvas.height = cropH;
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // GUARDA FOTO ORIGINAL INTACTA PARA DIBUJAR ENCIMA AL EDITAR
+      // GUARDA FOTO ORIGINAL INTACTA
       window.originalCaptureCanvas = document.createElement('canvas');
       window.originalCaptureCanvas.width = canvas.width; window.originalCaptureCanvas.height = canvas.height;
       window.originalCaptureCanvas.getContext('2d').drawImage(canvas, 0, 0);
 
-      // Cambiamos la vista Inmediatamente para que el usuario no se quede esperando
+      cropStartX = Math.floor(cropW * 0.40);
+
       switchPanel('panel-review');
       
-      // Procesamiento con Try-Catch seguro
-      try {
-        procesarDesdeMemoria();
-      } catch (error) {
-        // SI ALGO FALLA (Ej. matemáticas de OpenCV), cargamos la interfaz vacía
-        console.error(error);
-        MatrizPerspectivaInversa = null;
-        let cantP = examenActual.cant_preguntas;
+      try { procesarDesdeMemoria(); } 
+      catch (error) {
+        console.error(error); MatrizPerspectivaInversa = null; let cantP = examenActual.cant_preguntas;
         arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
         document.getElementById('reviewWarning').style.display = 'block';
         generarEditorManualYCalcular();
@@ -278,22 +310,21 @@
 
     function procesarDesdeMemoria() {
       let src = cv.imread(window.originalCaptureCanvas);
-      let targets = getFinderPatterns(src);
+      let markers = getFinderPatterns(src);
       
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      // Limpiamos la matriz inversa previa
       if (MatrizPerspectivaInversa) { MatrizPerspectivaInversa.delete(); MatrizPerspectivaInversa = null; }
 
-      if (targets.length < 4) {
+      if (markers.length < 4) {
         reviewWarning.style.display = 'block';
         arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
       } else { 
         reviewWarning.style.display = 'none'; 
         
-        targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
-        targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
+        markers.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = markers[0]; let br = markers[markers.length-1];
+        markers.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = markers[0]; let tr = markers[markers.length-1];
 
         let pad = 20; let cellW = 35; let cellH = 35;
         let targetW = (opc + 1) * cellW; let targetH = cantP * cellH;
@@ -301,20 +332,16 @@
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
         let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [pad, pad, targetW+pad, pad, pad, targetH+pad, targetW+pad, targetH+pad]);
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
-        
-        // Guardar Inversa para redibujar más tarde
         MatrizPerspectivaInversa = cv.getPerspectiveTransform(dstTri, srcTri);
         
         let warped = new cv.Mat(); let size = new cv.Size(targetW + pad*2, targetH + pad*2);
         cv.warpPerspective(src, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
 
-        // Blur para atrapar líneas delgadas (lápiz tenue, diagonales)
-        let blurred = new cv.Mat(); cv.GaussianBlur(warped, blurred, new cv.Size(5, 5), 0);
-        let gray = new cv.Mat(); cv.cvtColor(blurred, gray, cv.COLOR_RGBA2GRAY, 0);
+        let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY, 0);
 
         arregloRespuestasManuales = [];
+        let umbralSensibilidad = parseInt(document.getElementById('sliderSens').value); // Lee el valor del slider (Ej. 185)
 
-        // Evaluar promedios de gris
         for (let r = 0; r < cantP; r++) {
           let minColor = 255; let idxM = -1;
           for (let c = 0; c < opc; c++) {
@@ -326,19 +353,18 @@
               let meanColor = cv.mean(roiC).val[0];
               roiC.delete();
               
-              if (meanColor < minColor && meanColor < 190) { minColor = meanColor; idxM = c; }
+              if (meanColor < minColor && meanColor < umbralSensibilidad) { minColor = meanColor; idxM = c; }
             }
           }
           let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO";
           arregloRespuestasManuales.push(lM);
         }
-        srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); blurred.delete(); gray.delete();
+        srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); gray.delete();
       }
 
       generarEditorManualYCalcular();
       src.delete(); 
 
-      // Nomenclatura del archivo local
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
@@ -346,13 +372,11 @@
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
     }
 
-    // DISPARADO CUANDO EL USUARIO CAMBIA UN DROPDOWN MANUALMENTE
     function actualizarRespuesta(idxPregunta, nuevoValor) {
       arregloRespuestasManuales[idxPregunta] = nuevoValor;
-      generarEditorManualYCalcular(); // Redibuja la interfaz (No usa la cámara, es instantáneo)
+      generarEditorManualYCalcular(); // Redibuja la interfaz al instante
     }
 
-    // ESTA FUNCIÓN ES INFALIBLE Y SIEMPRE SE DIBUJA
     function generarEditorManualYCalcular() {
       let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
       let htmlEditor = ""; let aciertos = 0; let detalleArray = []; let incorrectasArray = [];
@@ -365,7 +389,6 @@
 
         let opts = ["A", "B", "C", "D"].slice(0, opc); opts.push("BLANCO");
         let optString = opts.map(o => `<option value="${o}" ${o===lM?'selected':''}>${o}</option>`).join("");
-        
         let classColor = esCorrecta ? 'c-ok' : 'c-err';
         htmlEditor += `<div class="edit-row"><span class="${classColor}">P${i+1}. (Resp: ${lC})</span><select id="edit_q_${i}" onchange="actualizarRespuesta(${i}, this.value)">${optString}</select></div>`;
       }
@@ -375,17 +398,15 @@
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
       dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-      // Restaurar Imagen Base (Caché Original)
+      // Restaurar Imagen Original Entera
       ctx.drawImage(window.originalCaptureCanvas, 0, 0); 
       
-      // Si tenemos la matriz inversa (la lectura funcionó), dibujamos circulitos de colores en las burbujas
+      // Dibujar marcadores si el cálculo OpenCV fue exitoso
       if (MatrizPerspectivaInversa) {
         let pad = 20; let cellW = 35; let cellH = 35;
         for (let r = 0; r < cantP; r++) {
-          let lM = arregloRespuestasManuales[r];
-          let lC = clave[r];
+          let lM = arregloRespuestasManuales[r]; let lC = clave[r];
           let idxM = ["A", "B", "C", "D"].indexOf(lM);
-          
           if (idxM >= 0) {
             let cx = (idxM + 1) * cellW + (cellW / 2) + pad; let cy = r * cellH + (cellH / 2) + pad;
             let ptMat = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]); let outMat = new cv.Mat();
@@ -399,7 +420,6 @@
         }
       }
 
-      // Cuadro de Nota Oscuro para tapar cualquier cosa debajo
       let textoNota = `NOTA: ${notaSobre100}/100`;
       ctx.font = "bold 65px Arial"; let anchoTexto = ctx.measureText(textoNota).width;
       let posX = canvas.width - anchoTexto - 30; let posY = 80; 
