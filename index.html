@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Flujo CamScanner</title>
+  <title>OMR Scanner Pro - Studio Edit</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -21,16 +21,22 @@
     .btn:active { transform: scale(0.97); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CONTENEDOR DE CÁMARA */
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; border: 2px solid #3b82f6; }
     video { width: 100%; height: 100%; object-fit: cover; }
 
-    /* LIENZO INTERACTIVO TIPO CAMSCANNER */
-    .crop-stage { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; touch-action: none; }
+    /* LIENZO INTERACTIVO (CROP STAGE) */
+    .crop-stage { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; touch-action: none; border: 2px solid #10b981;}
     #cropCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
-    /* EDITOR MANUAL */
-    #manualEditor { background: #1e293b; padding: 14px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3b82f6; }
+    /* PANEL DE FILTROS B/N */
+    .filter-panel { background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3b82f6; }
+    .filter-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .filter-row label { font-size: 0.8rem; color: #94a3b8; width: 60px; font-weight: bold;}
+    .filter-row input[type=range] { flex: 1; margin: 0 10px; accent-color: #3b82f6; }
+    .filter-row span { font-size: 0.8rem; color: #f8fafc; width: 30px; text-align: right; }
+    .preview-bw { width: 100%; height: 100px; background: #000; border: 1px solid #334155; border-radius: 6px; object-fit: cover; margin-top: 5px; }
+
+    #manualEditor { background: #1e293b; padding: 14px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #10b981; }
     .editor-title { font-size: 0.95rem; font-weight: bold; color: #f8fafc; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #334155; padding-bottom: 5px; }
     .edit-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 6px 10px; background: #0f172a; border-radius: 6px; }
     .edit-row span { font-size: 0.9rem; font-weight: bold; }
@@ -47,7 +53,7 @@
   <header>OMR Scanner Pro</header>
   <div id="notif">Notificación</div>
 
-  <!-- ETAPA 0: LOGIN -->
+  <!-- PANEL 0: LOGIN -->
   <div id="panel-login" class="panel active">
     <div class="card" style="margin-top: 25px; text-align: center;">
       <div style="font-size: 2.5rem; margin-bottom: 10px;">🔒</div>
@@ -58,7 +64,7 @@
     </div>
   </div>
 
-  <!-- ETAPA 1: SELECCIÓN -->
+  <!-- PANEL 1: CONFIGURACIÓN -->
   <div id="panel-config" class="panel">
     <div class="card" id="selectionCard" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -71,9 +77,9 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 1. Tomar Foto a la Hoja</button>
   </div>
 
-  <!-- ETAPA 2: FOTOGRAFÍA ESTÁTICA -->
+  <!-- PANEL 2: FOTOGRAFÍA ESTÁTICA -->
   <div id="panel-camera" class="panel">
-    <div class="info-text">Paso 1: Encuadre toda la hoja tamaño carta.</div>
+    <div class="info-text">Paso 1: Encuadre toda la hoja y capture.</div>
     <div class="camera-wrapper">
       <video id="videoElement" autoplay playsinline></video>
     </div>
@@ -81,24 +87,48 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- ETAPA 3: ENCUADRE INTERACTIVO (ESTILO CAMSCANNER) -->
+  <!-- PANEL 3: ENCUADRE INTERACTIVO (BORDES, CENTRO, ESQUINAS) -->
   <div id="panel-crop" class="panel">
-    <div class="info-text" style="color: #38bdf8;">Paso 2: Ajuste los 4 puntos sobre las esquinas de la hoja de respuestas:</div>
+    <div class="info-text" style="color: #38bdf8;">Paso 2: Arrastre el área azul sobre la Hoja de Respuestas.</div>
     <div class="crop-stage" id="cropStage">
       <canvas id="cropCanvas"></canvas>
     </div>
-    <button class="btn btn-primary" onclick="procesarEncuadre()">⚡ PROCESAR Y LEER BURBUJAS</button>
+    <button class="btn btn-primary" onclick="iniciarFiltrosYEdicion()">⚡ RECORTAR Y LEER</button>
     <button class="btn btn-danger" onclick="reintentarCamara()">🔄 Volver a Tomar Foto</button>
   </div>
 
-  <!-- ETAPA 4: REVISIÓN DE RESULTADOS Y EDICIÓN MANUAL -->
+  <!-- PANEL 4: ESTUDIO DE IMAGEN, RESULTADOS Y EDICIÓN -->
   <div id="panel-review" class="panel">
-    <div class="info-text" style="color: #fbbf24;">Paso 3: Verifique la nota o corrija si el estudiante tachó doble:</div>
     
-    <div class="camera-wrapper" style="aspect-ratio: auto; height: 260px;">
+    <!-- Visor de Binarización (Lo que ve la máquina) -->
+    <div class="filter-panel">
+      <div class="editor-title" style="border-color:#3b82f6; font-size:0.85rem;">CONTROLES DE LECTURA ÓPTICA (VISOR B/N)</div>
+      
+      <div class="filter-row">
+        <label>Brillo</label>
+        <input type="range" id="slBrillo" min="-100" max="100" value="0" oninput="aplicarFiltrosBinarizacion()">
+        <span id="valBrillo">0</span>
+      </div>
+      <div class="filter-row">
+        <label>Contraste</label>
+        <input type="range" id="slContraste" min="10" max="30" value="10" oninput="aplicarFiltrosBinarizacion()">
+        <span id="valContraste">1.0</span>
+      </div>
+      <div class="filter-row">
+        <label>Umbral</label>
+        <input type="range" id="slUmbral" min="50" max="250" value="180" oninput="aplicarFiltrosBinarizacion()">
+        <span id="valUmbral">180</span>
+      </div>
+      <canvas id="bwCanvasPreview" class="preview-bw"></canvas>
+      <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-top:4px;">Ajuste hasta ver las burbujas pintadas en blanco puro.</div>
+    </div>
+
+    <!-- Fotografía Final con Nota -->
+    <div class="camera-wrapper" style="aspect-ratio: auto; height: 260px; border-color:#10b981;">
       <canvas id="canvasFinal" style="width: 100%; height: 100%; object-fit: contain;"></canvas>
     </div>
     
+    <!-- Editor Manual -->
     <div id="manualEditor">
       <div class="editor-title">✏️ REVISIÓN / CORRECCIÓN MANUAL</div>
       <div id="editorFilas"></div>
@@ -107,8 +137,8 @@
     <div class="loader" id="loaderUpload">⏳ Guardando en Sheets y descargando imagen...</div>
     
     <div id="reviewButtons">
-      <button class="btn btn-success" onclick="enviarCalificacion()">📥 Confirmar y Descargar Foto</button>
-      <button class="btn btn-danger" onclick="reintentarCamara()">🔄 Descartar y Nueva Foto</button>
+      <button class="btn btn-success" onclick="enviarCalificacion()">📥 CONFIRMAR Y SUBIR NOTA</button>
+      <button class="btn btn-danger" onclick="volverAlCrop()">🔙 Volver a Enmarcar</button>
     </div>
   </div>
 
@@ -122,15 +152,18 @@
     let video = document.getElementById('videoElement');
     let cropCanvas = document.getElementById('cropCanvas'); let cropCtx = cropCanvas.getContext('2d');
     let canvasFinal = document.getElementById('canvasFinal'); let ctxFinal = canvasFinal.getContext('2d');
+    let bwCanvas = document.getElementById('bwCanvasPreview'); let bwCtx = bwCanvas.getContext('2d');
     
     let stream = null; let opencvReady = false; let userPin = "";
-    let capturedImage = null; // Imagen congelada
+    let capturedImage = null; // Foto original guardada
+    let warpedMatBase = null; // Recorte a color original para aplicar filtros encima
     let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     let arregloRespuestasManuales = [];
 
-    // Puntos de anclaje interactivos (tipo CamScanner)
+    // Lógica del Recuadro de Recorte
     let corners = []; 
-    let activeCorner = null;
+    let activeHandle = null; // Puede ser un índice (0-3), "center", o "edge_0-3"
+    let dragOffset = {x:0, y:0};
 
     function onOpenCvReady() { opencvReady = true; }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3000); }
@@ -170,7 +203,6 @@
     }
 
     async function abrirCamara() {
-      estudianteActual = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('panel-camera');
       const constraints = { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } };
       try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } 
@@ -180,96 +212,143 @@
     function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarCamara() { switchPanel('panel-camera'); }
+    function volverAlCrop() { switchPanel('panel-crop'); }
 
-    // PASO 1: CAPTURAR FOTO FIJA
+    // PASO 1: FOTO FIJA
     function capturarFotoFija() {
       capturedImage = document.createElement('canvas');
       capturedImage.width = video.videoWidth; 
       capturedImage.height = video.videoHeight;
       capturedImage.getContext('2d').drawImage(video, 0, 0);
-
       detenerCamara();
       iniciarEtapaEncuadre();
     }
 
-    // PASO 2: AJUSTE DE 4 ESQUINAS INTERACTIVO (TIPO CAMSCANNER)
+    // PASO 2: ENCUADRE INTERACTIVO (Centro, Bordes, Esquinas)
     function iniciarEtapaEncuadre() {
       switchPanel('panel-crop');
       cropCanvas.width = cropCanvas.clientWidth;
       cropCanvas.height = cropCanvas.clientHeight;
 
-      // Colocación inicial de las 4 esquinas sobre el lado derecho (zona OMR)
       let w = cropCanvas.width; let h = cropCanvas.height;
+      // Posición inicial: Lado derecho de la hoja
       corners = [
-        { x: w * 0.58, y: h * 0.12 }, // Superior Izquierda
-        { x: w * 0.94, y: h * 0.12 }, // Superior Derecha
-        { x: w * 0.94, y: h * 0.85 }, // Inferior Derecha
-        { x: w * 0.58, y: h * 0.85 }  // Inferior Izquierda
+        { x: w * 0.55, y: h * 0.15 }, // TL (0)
+        { x: w * 0.95, y: h * 0.15 }, // TR (1)
+        { x: w * 0.95, y: h * 0.85 }, // BR (2)
+        { x: w * 0.55, y: h * 0.85 }  // BL (3)
       ];
       dibujarEncuadre();
     }
 
     function dibujarEncuadre() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
-      // Dibujar la foto congelada escalada al lienzo
       cropCtx.drawImage(capturedImage, 0, 0, cropCanvas.width, cropCanvas.height);
 
-      // Dibujar polígono verde de selección
+      // Polígono azul translucido
       cropCtx.beginPath();
       cropCtx.moveTo(corners[0].x, corners[0].y);
       for (let i = 1; i < 4; i++) cropCtx.lineTo(corners[i].x, corners[i].y);
       cropCtx.closePath();
       cropCtx.lineWidth = 3;
-      cropCtx.strokeStyle = "#10b981";
-      cropCtx.fillStyle = "rgba(16, 185, 129, 0.15)";
+      cropCtx.strokeStyle = "#3b82f6";
+      cropCtx.fillStyle = "rgba(59, 130, 246, 0.25)"; // Azulado
       cropCtx.fill();
       cropCtx.stroke();
 
-      // Dibujar 4 manijas táctiles circulares
-      corners.forEach((c, idx) => {
-        cropCtx.beginPath();
-        cropCtx.arc(c.x, c.y, 16, 0, 2 * Math.PI);
-        cropCtx.fillStyle = "#3b82f6";
-        cropCtx.fill();
-        cropCtx.lineWidth = 3;
-        cropCtx.strokeStyle = "#ffffff";
-        cropCtx.stroke();
+      // Esquinas interactivas
+      corners.forEach((c) => {
+        cropCtx.beginPath(); cropCtx.arc(c.x, c.y, 14, 0, 2 * Math.PI);
+        cropCtx.fillStyle = "#10b981"; cropCtx.fill();
+        cropCtx.lineWidth = 2; cropCtx.strokeStyle = "#ffffff"; cropCtx.stroke();
       });
     }
 
-    // INTERACCIÓN TÁCTIL PARA MOVER LAS ESQUINAS CON EL DEDO
+    // LÓGICA DE TOQUE PARA MOVER (Distancia a punto, distancia a línea, punto en polígono)
     function getTouchPos(e) {
       let rect = cropCanvas.getBoundingClientRect();
-      let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return { x: clientX - rect.left, y: clientY - rect.top };
+      let cx = e.touches ? e.touches[0].clientX : e.clientX;
+      let cy = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: cx - rect.left, y: cy - rect.top };
+    }
+
+    // Distancia punto a segmento
+    function distToSegment(p, v, w) {
+      let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
+      if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+      let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+    }
+
+    // Ray-casting para detectar si toca el centro
+    function pointInPolygon(point, vs) {
+      let x = point.x, y = point.y; let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y;
+        let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
     }
 
     cropCanvas.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e);
-      activeCorner = null;
-      corners.forEach((c, idx) => {
-        let dist = Math.hypot(c.x - pos.x, c.y - pos.y);
-        if (dist < 35) activeCorner = idx; // Radio de agarre cómodo
-      });
-    });
+      activeHandle = null;
 
-    cropCanvas.addEventListener('pointermove', (e) => {
-      if (activeCorner !== null) {
-        let pos = getTouchPos(e);
-        corners[activeCorner].x = Math.max(10, Math.min(cropCanvas.width - 10, pos.x));
-        corners[activeCorner].y = Math.max(10, Math.min(cropCanvas.height - 10, pos.y));
-        dibujarEncuadre();
+      // 1. Toca una esquina?
+      for (let i=0; i<4; i++) {
+        if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 30) {
+          activeHandle = i; return;
+        }
+      }
+
+      // 2. Toca un borde? (Top=0, Right=1, Bottom=2, Left=3)
+      for (let i=0; i<4; i++) {
+        let j = (i + 1) % 4;
+        if (distToSegment(pos, corners[i], corners[j]) < 25) {
+          activeHandle = `edge_${i}`;
+          dragOffset = pos;
+          return;
+        }
+      }
+
+      // 3. Toca el centro?
+      if (pointInPolygon(pos, corners)) {
+        activeHandle = "center";
+        dragOffset = pos;
       }
     });
 
-    window.addEventListener('pointerup', () => { activeCorner = null; });
+    cropCanvas.addEventListener('pointermove', (e) => {
+      if (activeHandle === null) return;
+      let pos = getTouchPos(e);
+      let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
 
-    // PASO 3: APLANADO, CONTRASTE Y LECTURA MATEMÁTICA
-    function procesarEncuadre() {
+      if (typeof activeHandle === 'number') { // Mueve esquina
+        corners[activeHandle].x = Math.max(0, Math.min(cropCanvas.width, pos.x));
+        corners[activeHandle].y = Math.max(0, Math.min(cropCanvas.height, pos.y));
+      } 
+      else if (activeHandle === "center") { // Mueve todo el polígono
+        corners.forEach(c => { c.x += dx; c.y += dy; });
+        dragOffset = pos;
+      } 
+      else if (activeHandle.startsWith("edge_")) { // Mueve un lado
+        let edgeIdx = parseInt(activeHandle.split("_")[1]);
+        let nextIdx = (edgeIdx + 1) % 4;
+        corners[edgeIdx].x += dx; corners[edgeIdx].y += dy;
+        corners[nextIdx].x += dx; corners[nextIdx].y += dy;
+        dragOffset = pos;
+      }
+      dibujarEncuadre();
+    });
+
+    window.addEventListener('pointerup', () => { activeHandle = null; });
+
+    // PASO 3: RECORTAR (WARP) E INICIAR ESTUDIO DE IMAGEN
+    function iniciarFiltrosYEdicion() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
 
-      // Escalar coordenadas del lienzo a las dimensiones reales de la foto capturada
       let scaleX = capturedImage.width / cropCanvas.width;
       let scaleY = capturedImage.height / cropCanvas.height;
 
@@ -280,133 +359,133 @@
         corners[3].x * scaleX, corners[3].y * scaleY
       ]);
 
-      let cantP = examenActual.cant_preguntas;
-      let opc = examenActual.opciones;
+      let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
 
-      // Generar una cuadrícula de lectura fija y perfecta
-      let cellW = 45; let cellH = 40;
+      // Matriz destino: Opc columnas + 1 num columna. 
+      let cellW = 40; let cellH = 35;
       let targetW = (opc + 1) * cellW; 
       let targetH = cantP * cellH;
 
-      let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        targetW, 0,
-        targetW, targetH,
-        0, targetH
-      ]);
+      let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, targetW, targetH, 0, targetH]);
 
       let src = cv.imread(capturedImage);
-      let M = cv.getPerspectiveTransform(srcTri, dstTri);
-      let warped = new cv.Mat();
-      let dsize = new cv.Size(targetW, targetH);
-      cv.warpPerspective(src, warped, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
+      if (warpedMatBase) warpedMatBase.delete();
+      warpedMatBase = new cv.Mat();
+      cv.warpPerspective(src, warpedMatBase, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(targetW, targetH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
 
-      // REALCE DE CONTRASTE AUTOMÁTICO (Estilo CamScanner)
+      src.delete(); srcTri.delete(); dstTri.delete();
+
+      switchPanel('panel-review');
+      
+      // Aplicar filtros la primera vez
+      aplicarFiltrosBinarizacion();
+    }
+
+    // EL VISOR B/N Y CÁLCULO DE BURBUJAS
+    function aplicarFiltrosBinarizacion() {
+      let valB = parseInt(document.getElementById('slBrillo').value);
+      let valC = parseInt(document.getElementById('slContraste').value) / 10;
+      let valU = parseInt(document.getElementById('slUmbral').value);
+
+      document.getElementById('valBrillo').innerText = valB;
+      document.getElementById('valContraste').innerText = valC.toFixed(1);
+      document.getElementById('valUmbral').innerText = valU;
+
       let gray = new cv.Mat();
-      cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY, 0);
-      let blurred = new cv.Mat();
-      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+      cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY, 0);
+
+      // Aplicar Brillo y Contraste: new_pixel = pixel * contrast + brightness
+      let adjusted = new cv.Mat();
+      gray.convertTo(adjusted, -1, valC, valB);
+
+      // Binarización INVERSA: Las sombras quedan en Blanco (255), el fondo en Negro (0)
+      let binarized = new cv.Mat();
+      cv.threshold(adjusted, binarized, valU, 255, cv.THRESH_BINARY_INV);
+
+      // Mostrar lo que ve la máquina en el Mini-Canvas
+      cv.imshow(bwCanvas, binarized);
+
+      // Leer la Matriz de Respuestas
+      leerRespuestasDeBinarizado(binarized);
+      
+      gray.delete(); adjusted.delete(); binarized.delete();
+    }
+
+    function leerRespuestasDeBinarizado(binMat) {
+      let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
+      let cellW = 40; let cellH = 35;
 
       arregloRespuestasManuales = [];
 
-      // Evaluación matemática por celdas
       for (let r = 0; r < cantP; r++) {
-        let minColor = 255;
-        let idxM = -1;
+        let maxBlancos = 0; let idxM = -1;
 
         for (let c = 0; c < opc; c++) {
-          // c+1 para saltar la columna de numeración
-          let cx = (c + 1) * cellW + (cellW / 2);
+          let cx = (c + 1) * cellW + (cellW / 2); // Salta col num
           let cy = r * cellH + (cellH / 2);
-
-          let rectScan = new cv.Rect(cx - 10, cy - 10, 20, 20);
-          let roi = blurred.roi(rectScan);
-          let meanVal = cv.mean(roi)[0]; // 0 = negro, 255 = blanco
+          
+          let scanW = 20; let scanH = 20;
+          let rx = Math.max(0, cx - scanW/2); let ry = Math.max(0, cy - scanH/2);
+          let rectScan = new cv.Rect(rx, ry, scanW, scanH);
+          
+          let roi = binMat.roi(rectScan);
+          // Cuenta cuántos píxeles BLANCOS (es decir, pintados por el usuario) hay
+          let pixelCount = cv.countNonZero(roi);
           roi.delete();
 
-          // Detección de lápiz o bolígrafo
-          if (meanVal < minColor && meanVal < 205) {
-            minColor = meanVal;
+          // Umbral de sensibilidad: > 10% del cuadrito (40 pixeles)
+          if (pixelCount > maxBlancos && pixelCount > (scanW * scanH * 0.10)) {
+            maxBlancos = pixelCount;
             idxM = c;
           }
         }
-
         let letras = ["A", "B", "C", "D"];
         arregloRespuestasManuales.push(idxM >= 0 ? letras[idxM] : "BLANCO");
       }
 
-      srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); gray.delete(); blurred.delete(); src.delete();
-
-      // Construir nombre de archivo
-      let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
-      let t = examenActual.tipo.toUpperCase(); let tA="OT";
-      if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
-      let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
-      finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
-
-      switchPanel('panel-review');
       renderizarResultadosYEditor();
     }
 
-    // PASO 4: INTERFAZ DE EDICIÓN Y NOTA FINAL
+    // RENDER FINAL Y ESTAMPADO DE NOTA EN FOTO GRANDE
     function renderizarResultadosYEditor() {
-      let cantP = examenActual.cant_preguntas;
-      let clave = examenActual.clave;
-      let opc = examenActual.opciones;
+      let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
       let aciertos = 0; let detalleArray = []; let incorrectasArray = [];
       let html = "";
 
       for (let i = 0; i < cantP; i++) {
-        let lC = clave[i];
-        let lM = arregloRespuestasManuales[i];
+        let lC = clave[i]; let lM = arregloRespuestasManuales[i];
         let esCorrecta = (lM === lC);
         if (esCorrecta) aciertos++; else incorrectasArray.push(i+1);
         detalleArray.push(`${i+1}:${lM}(${esCorrecta?'OK':'❌'+lC})`);
 
-        let opts = ["A", "B", "C", "D"].slice(0, opc);
-        opts.push("BLANCO");
+        let opts = ["A", "B", "C", "D"].slice(0, opc); opts.push("BLANCO");
         let optString = opts.map(o => `<option value="${o}" ${o===lM?'selected':''}>${o}</option>`).join("");
         let classColor = esCorrecta ? 'c-ok' : 'c-err';
 
-        html += `
-          <div class="edit-row">
-            <span class="${classColor}">Pregunta ${i+1} (Correcta: ${lC})</span>
-            <select onchange="actualizarRespuestaManual(${i}, this.value)">
-              ${optString}
-            </select>
-          </div>
-        `;
+        html += `<div class="edit-row"><span class="${classColor}">P${i+1}. (Correcta: ${lC})</span><select onchange="actualizarRespuestaManual(${i}, this.value)">${optString}</select></div>`;
       }
 
       document.getElementById('editorFilas').innerHTML = html;
 
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
       dataEvaluacion = {
-        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP,
-        nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
+        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Dibujar la foto congelada con el sello de calificación
-      canvasFinal.width = capturedImage.width;
-      canvasFinal.height = capturedImage.height;
+      // Dibujar la foto congelada grande
+      canvasFinal.width = capturedImage.width; canvasFinal.height = capturedImage.height;
       ctxFinal.drawImage(capturedImage, 0, 0);
 
-      // Estampar nota arriba a la derecha
+      // Estampar nota
       let textoNota = `NOTA: ${notaSobre100}/100`;
-      ctxFinal.font = "bold 60px Arial";
-      let anchoTexto = ctxFinal.measureText(textoNota).width;
-      let posX = canvasFinal.width - anchoTexto - 40;
-      let posY = 80;
+      ctxFinal.font = "bold 60px Arial"; let anchoTexto = ctxFinal.measureText(textoNota).width;
+      let posX = canvasFinal.width - anchoTexto - 40; let posY = 80;
 
-      ctxFinal.fillStyle = "rgba(0,0,0,0.75)";
-      ctxFinal.fillRect(posX - 15, posY - 60, anchoTexto + 30, 110);
+      ctxFinal.fillStyle = "rgba(0,0,0,0.85)"; ctxFinal.fillRect(posX - 20, posY - 60, anchoTexto + 40, 110);
+      ctxFinal.fillStyle = "red"; ctxFinal.fillText(textoNota, posX, posY); ctxFinal.lineWidth = 2; ctxFinal.strokeStyle = "white"; ctxFinal.strokeText(textoNota, posX, posY);
 
-      ctxFinal.fillStyle = "red"; ctxFinal.fillText(textoNota, posX, posY);
-      ctxFinal.lineWidth = 2; ctxFinal.strokeStyle = "white"; ctxFinal.strokeText(textoNota, posX, posY);
-
-      ctxFinal.font = "bold 32px Arial";
-      let textoAciertos = `(${aciertos} aciertos de ${cantP})`;
+      ctxFinal.font = "bold 32px Arial"; let textoAciertos = `(${aciertos} de ${cantP})`;
       ctxFinal.fillStyle = "#38bdf8"; ctxFinal.fillText(textoAciertos, posX, posY + 35);
 
       finalBase64 = canvasFinal.toDataURL('image/jpeg', 0.85).split(',')[1];
@@ -418,18 +497,18 @@
     }
 
     function guardarImagenLocal(base64, filename) {
-      const link = document.createElement("a");
-      link.href = "data:image/jpeg;base64," + base64;
-      link.download = filename + ".jpg";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const link = document.createElement("a"); link.href = "data:image/jpeg;base64," + base64; link.download = filename + ".jpg";
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
     }
 
-    // PASO 5: ENVÍO DEFINITIVO A GOOGLE SHEETS
     async function enviarCalificacion() {
-      document.getElementById('reviewButtons').style.display = 'none';
-      document.getElementById('loaderUpload').style.display = 'block';
+      document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
+
+      let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
+      let t = examenActual.tipo.toUpperCase(); let tA="OT";
+      if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
+      let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
+      finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
 
       let payload = { 
         pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
@@ -440,25 +519,12 @@
       };
 
       try {
-        let res = await fetch(SCRIPT_URL, { 
-          method: "POST", 
-          body: JSON.stringify(payload), 
-          headers: { "Content-Type": "text/plain;charset=utf-8" } 
-        }); 
+        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
         let result = await res.json();
-        if (result.status === "success") { 
-          guardarImagenLocal(finalBase64, finalFileName); 
-          showNotif("¡Nota enviada a Sheets y Foto descargada!"); 
-          setTimeout(() => { volverAConfig(); }, 2200); 
-        } 
+        if (result.status === "success") { guardarImagenLocal(finalBase64, finalFileName); showNotif("¡Nota enviada a Sheets y Foto descargada!"); setTimeout(() => { switchPanel('panel-config'); }, 2200); } 
         else throw new Error(result.message);
-      } catch (e) { 
-        alert("Error al subir a Sheets: " + e.message); 
-        document.getElementById('reviewButtons').style.display = 'block'; 
-      } 
-      finally { 
-        document.getElementById('loaderUpload').style.display = 'none'; 
-      }
+      } catch (e) { alert("Error al subir a Sheets: " + e.message); document.getElementById('reviewButtons').style.display = 'block'; } 
+      finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
 </body>
