@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Docentes</title>
+  <title>OMR Scanner Pro - Matriz Matemática</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
     body { margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
     
     header { background: #020617; padding: 15px; text-align: center; font-weight: bold; font-size: 1.2rem; box-shadow: 0 2px 10px rgba(0,0,0,0.5); position: sticky; top: 0; z-index: 50;}
-    
     .panel { display: none; flex-direction: column; padding: 15px; width: 100%; max-width: 600px; margin: 0 auto; box-sizing: border-box; }
     .panel.active { display: flex; }
 
@@ -20,33 +19,15 @@
     
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
-    .btn-primary { background: var(--primary); }
-    .btn-success { background: var(--success); border: 2px solid #059669; }
-    .btn-danger { background: var(--danger); border: 2px solid #b91c1c; }
-    .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CONTAIN (Para evitar recortes, muestra todo el sensor de la cámara) */
+    /* CÁMARA CONTAIN (Sin recortes ni guías) */
     .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
-    
-    /* El aspect ratio asegura que el contenedor sea vertical */
-    .camera-container::before { content: ""; display: block; padding-top: 133%; /* 4:3 aprox */ }
-    
+    .camera-container::before { content: ""; display: block; padding-top: 133%; }
     video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
-    
-    /* MÁSCARA QUE SE CENTRA EN LA COLUMNA DE RESPUESTAS */
-    .guide-paper {
-      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-      width: 70%; /* Ancho de la zona a capturar */
-      height: 90%;
-      border: 3px solid #38bdf8;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); /* Oscurece todo el resto */
-      box-sizing: border-box; pointer-events: none;
-    }
-    .guide-text { position: absolute; top: 20px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 1rem; text-shadow: 1px 1px 4px #000;}
 
     .loader { text-align: center; padding: 20px; color: #38bdf8; font-weight: bold; display: none; }
-    #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.6);}
-    
+    #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100;}
     #reviewWarning { background: #b91c1c; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9rem; font-weight: bold; text-align: center; display: none; border: 2px solid #f87171;}
     .info-text { text-align: center; font-size: 1rem; margin-bottom: 12px; color: #94a3b8; font-weight: bold; }
   </style>
@@ -56,50 +37,36 @@
   <header>OMR Scanner Pro</header>
   <div id="notif">Cargando...</div>
 
-  <!-- PANEL 1: CONFIGURACIÓN -->
+  <!-- PANEL 1 -->
   <div id="panel-config" class="panel active">
     <div class="card">
       <label>1. Sincronizar Base de Datos</label>
       <button class="btn btn-primary" id="btnSync" onclick="fetchData()">🔄 Descargar Exámenes</button>
       <div id="syncStatus" style="font-size: 0.85rem; color: #10b981; text-align: center; margin-top: 5px;"></div>
     </div>
-
     <div class="card" id="selectionCard" style="display:none;">
-      <label>2. Seleccionar Examen</label>
-      <select id="selExamen" onchange="actualizarListaEstudiantes()"><option value="">-- Elija un examen --</option></select>
-      <label>3. Estudiante a Evaluar</label>
-      <select id="selEstudiante"><option value="">-- Seleccione estudiante --</option></select>
+      <label>2. Seleccionar Examen</label><select id="selExamen" onchange="actualizarListaEstudiantes()"><option value="">-- Elija un examen --</option></select>
+      <label>3. Estudiante a Evaluar</label><select id="selEstudiante"><option value="">-- Seleccione estudiante --</option></select>
     </div>
-
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA -->
+  <!-- PANEL 2 -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Cargando cámara...</div>
-    
+    <div class="info-text" id="infoScanText">Enfoque bien la hoja...</div>
     <div class="camera-container">
       <video id="videoElement" autoplay playsinline></video>
-      <div class="guide-paper">
-        <div class="guide-text">Encuadre toda la hoja OMR aquí 👇</div>
-      </div>
     </div>
-
     <button class="btn btn-success" onclick="capturarYEvaluar()">⏺️ CAPTURAR IMAGEN</button>
-    <button class="btn btn-danger" onclick="volverAConfig()">❌ Volver al Menú</button>
+    <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: REVISIÓN DE IMAGEN -->
+  <!-- PANEL 3 -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ ADVERTENCIA: Se esperaban X preguntas y se detectaron Y.</div>
+    <div id="reviewWarning">⚠️ La lectura puede ser errónea. Por favor verifique o retome la foto.</div>
     <div class="info-text" style="color: #fbbf24;">Revise la calificación antes de enviar</div>
-    
-    <div class="camera-container">
-      <canvas id="canvasResult"></canvas>
-    </div>
-
-    <div class="loader" id="loaderUpload">⏳ Subiendo imagen y datos a Drive...</div>
-
+    <div class="camera-container"><canvas id="canvasResult"></canvas></div>
+    <div class="loader" id="loaderUpload">⏳ Subiendo imagen y datos...</div>
     <div id="reviewButtons">
       <button class="btn btn-success" onclick="enviarCalificacion()">📤 CONFIRMAR Y SUBIR NOTA</button>
       <button class="btn btn-danger" onclick="reintentarFoto()">🔄 Retomar Foto</button>
@@ -114,8 +81,7 @@
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
-    let stream = null; let opencvReady = false;
-    let finalBase64 = ""; let dataEvaluacion = {};
+    let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {};
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
@@ -126,56 +92,38 @@
       try {
         let response = await fetch(SCRIPT_URL); let data = await response.json();
         dbExamenes = data.examenes; dbEstudiantes = data.estudiantes;
-        
-        let selEx = document.getElementById('selExamen');
-        selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
+        let selEx = document.getElementById('selExamen'); selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
-
-        document.getElementById('selectionCard').style.display = 'block';
-        document.getElementById('btnSync').innerText = "🔄 Actualizar BD";
-        document.getElementById('syncStatus').innerText = `✔️ Listos para evaluar.`;
-        showNotif("Datos descargados exitosamente");
-      } catch (err) { document.getElementById('btnSync').innerText = "❌ Error. Reintentar"; alert("Revise su conexión a Internet o la URL del script."); }
+        document.getElementById('selectionCard').style.display = 'block'; document.getElementById('btnSync').innerText = "🔄 Actualizar BD"; document.getElementById('syncStatus').innerText = `✔️ Listos para evaluar.`;
+      } catch (err) { alert("Error. Revise su internet."); }
     }
 
     function actualizarListaEstudiantes() {
-      let idEx = document.getElementById('selExamen').value;
-      examenActual = dbExamenes.find(e => e.id === idEx);
-      let selEst = document.getElementById('selEstudiante');
-      selEst.innerHTML = '<option value="">-- Seleccione estudiante --</option>';
-      
+      examenActual = dbExamenes.find(e => e.id === document.getElementById('selExamen').value);
+      let selEst = document.getElementById('selEstudiante'); selEst.innerHTML = '<option value="">-- Seleccione estudiante --</option>';
       if (examenActual) {
         let filtrados = dbEstudiantes.filter(est => est.curso === examenActual.curso);
         filtrados.forEach(est => { let opt = document.createElement('option'); opt.value = JSON.stringify(est); opt.innerText = `N° ${est.n_lista} - ${est.nombre}`; selEst.appendChild(opt); });
         document.getElementById('btnIniciarEscaneo').classList.replace('btn-disabled', 'btn-primary');
-      } else {
-        document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled');
-      }
+      } else { document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled'); }
     }
 
     async function abrirCamara() {
-      let estVal = document.getElementById('selEstudiante').value;
-      if (!estVal || !examenActual) { alert("Seleccione un estudiante"); return; }
-      estudianteActual = JSON.parse(estVal);
-
-      switchPanel('panel-camera');
-      document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } });
-        video.srcObject = stream;
-      } catch (err) { alert("Permita acceso a la cámara en su navegador."); }
+      estudianteActual = JSON.parse(document.getElementById('selEstudiante').value);
+      switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } }); video.srcObject = stream; } 
+      catch (err) { alert("Permita acceso a la cámara."); }
     }
 
     function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); }
 
-    // PROCESAMIENTO OPENCV MEJORADO POR CIRCULARIDAD
+    // ==========================================
+    // ANÁLISIS DE MATRIZ MATEMÁTICA CON OPENCV
+    // ==========================================
     function capturarYEvaluar() {
-      if (!opencvReady) { alert("Cargando motor visual. Espere un momento."); return; }
-      
-      // Dibujar imagen exacta de la cámara (SIN recortes)
+      if (!opencvReady) { alert("Cargando motor..."); return; }
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       switchPanel('panel-review');
@@ -183,86 +131,98 @@
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      // ADAPTIVE THRESHOLD (Para sombras)
+      // Threshold Adaptativo
       let thresh = new cv.Mat();
       cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
-      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
-      cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      // Analizar solo la mitad derecha de la foto (donde suele estar el OMR)
+      let roiStartX = Math.floor(canvas.width * 0.45);
+      let roiWidth = canvas.width - roiStartX;
+      let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
+      let roiThresh = thresh.roi(rect);
 
-      // EXTRACTOR MÁGICO DE BURBUJAS (Filtra por círculo perfecto)
+      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
+      cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      // Buscar todos los círculos (Burbujas OMR)
       let burbujas = [];
+      let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
+      let sumW = 0, sumH = 0;
+
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
         let r = cv.boundingRect(cnt);
         let area = cv.contourArea(cnt);
-        let aspect = r.width / r.height;
         let perimeter = cv.arcLength(cnt, true);
         
-        // La fórmula mágica: un círculo perfecto tiene circularidad = 1
+        // Circularidad
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
         
-        // Exigimos que sea redondo (>0.75) y que no sea una mancha gigante ni diminuta
-        if (area > 150 && area < 6000 && aspect > 0.7 && aspect < 1.3 && circularity > 0.75) {
-          // Asegurarnos de que están en la mitad derecha de la foto (donde está el OMR)
-          if (r.x > canvas.width * 0.4) {
-            burbujas.push(r);
-          }
+        // Si es un circulo razonable, lo guardamos para calcular el área total del OMR
+        if (area > 150 && area < 6000 && circularity > 0.65) {
+          burbujas.push(r);
+          if (r.x < minX) minX = r.x;
+          if (r.y < minY) minY = r.y;
+          if (r.x + r.width > maxX) maxX = r.x + r.width;
+          if (r.y + r.height > maxY) maxY = r.y + r.height;
+          sumW += r.width; sumH += r.height;
         }
       }
 
-      // Ordenar geométricamente por filas (de arriba a abajo)
-      burbujas.sort((a, b) => a.y - b.y);
-      let filas = []; let filaActual = [];
-      let yRef = burbujas.length > 0 ? burbujas[0].y : 0;
-
-      for (let i = 0; i < burbujas.length; i++) {
-        if (Math.abs(burbujas[i].y - yRef) < 30) { filaActual.push(burbujas[i]); } 
-        else {
-          filaActual.sort((a, b) => a.x - b.x); filas.push(filaActual);
-          filaActual = [burbujas[i]]; yRef = burbujas[i].y;
-        }
-      }
-      if (filaActual.length > 0) { filaActual.sort((a, b) => a.x - b.x); filas.push(filaActual); }
-
-      // Filtrar filas basura (las que no tengan la cantidad de opciones del examen)
-      let opc = examenActual.opciones;
-      let filasLimpias = filas.filter(f => f.length === opc);
-
-      // VALIDACIÓN
       let cantP = examenActual.cant_preguntas;
+      let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      if (filasLimpias.length !== cantP) {
-        reviewWarning.innerText = `⚠️ ADVERTENCIA: El examen exige ${cantP} preguntas, pero detecté ${filasLimpias.length} completas. Si no cuadra, retome la foto acercándose a la hoja de respuestas.`;
+      // Validar si encontramos al menos algunas burbujas para hacer la matriz
+      if (burbujas.length < (cantP * opc) / 3) {
         reviewWarning.style.display = 'block';
       } else { reviewWarning.style.display = 'none'; }
 
+      // Promedio del tamaño de burbuja
+      let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
+      let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
+
+      // Calcular la Cuadrícula Matemática
+      let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
+      let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
+
       let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
 
-      for (let i = 0; i < Math.min(filasLimpias.length, cantP); i++) {
-        let f = filasLimpias[i]; let idxM = -1; let maxP = 0;
+      for (let i = 0; i < cantP; i++) {
+        let yCenter = minY + (i * rowHeight) + (avgH / 2);
+        let maxP = 0; let idxM = -1;
 
-        for (let j = 0; j < Math.min(f.length, opc); j++) {
-          let b = f[j]; let bRect = new cv.Rect(b.x, b.y, b.width, b.height);
-          let roiB = thresh.roi(bRect);
+        for (let j = 0; j < opc; j++) {
+          let xCenter = minX + (j * colWidth) + (avgW / 2);
+          
+          // Crear un recuadro de escaneo alrededor del centro proyectado
+          let scanW = avgW * 1.2; let scanH = avgH * 1.2;
+          let rx = Math.max(0, xCenter - scanW/2);
+          let ry = Math.max(0, yCenter - scanH/2);
+          
+          let scanRect = new cv.Rect(rx, ry, scanW, scanH);
+          let roiB = roiThresh.roi(scanRect);
           let p = cv.countNonZero(roiB);
           roiB.delete();
-          if (p > maxP && p > (b.width * b.height * 0.35)) { maxP = p; idxM = j; }
+
+          // Umbral de relleno para considerarla marcada
+          if (p > maxP && p > (scanW * scanH * 0.25)) { maxP = p; idxM = j; }
         }
 
         let lResp = ["A", "B", "C", "D"]; 
         let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; 
         let lC = clave[i];
         
-        let color;
-        if (lM === lC) { color = "green"; aciertos++; detalleArray.push(`${i+1}:${lM}(OK)`); } 
-        else { color = "red"; incorrectasArray.push(i+1); detalleArray.push(`${i+1}:${lM}(❌${lC})`); }
+        let color = (lM === lC) ? "green" : "red";
+        if (lM === lC) aciertos++; else incorrectasArray.push(i+1);
+        detalleArray.push(`${i+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
 
-        if (idxM >= 0 && idxM < f.length) {
-          let b = f[idxM];
-          ctx.beginPath(); ctx.lineWidth=8; ctx.strokeStyle=color;
-          ctx.arc(b.x + b.width/2, b.y + b.height/2, b.width/2 + 10, 0, 2*Math.PI); ctx.stroke();
+        // Dibujar en el canvas original para mostrar al maestro (sumamos el roiStartX)
+        if (idxM >= 0) {
+          let markX = roiStartX + minX + (idxM * colWidth) + (avgW / 2);
+          let markY = minY + (i * rowHeight) + (avgH / 2);
+          ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+          ctx.arc(markX, markY, avgW/2 + 10, 0, 2*Math.PI); ctx.stroke();
         }
       }
 
@@ -274,14 +234,14 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Dibujar en imagen
-      ctx.font = "bold 120px Arial"; ctx.fillStyle = "red"; ctx.fillText(`NOTA: ${notaSobre100}/100`, 50, 150);
+      // Nota visual
+      ctx.font = "bold 130px Arial"; ctx.fillStyle = "red"; ctx.fillText(`NOTA: ${notaSobre100}/100`, 50, 150);
       ctx.lineWidth = 6; ctx.strokeStyle = "white"; ctx.strokeText(`NOTA: ${notaSobre100}/100`, 50, 150);
       ctx.font = "bold 80px Arial"; ctx.fillStyle = "#38bdf8"; ctx.fillText(`(${aciertos} correctas de ${cantP})`, 50, 260);
       ctx.lineWidth = 4; ctx.strokeStyle = "black"; ctx.strokeText(`(${aciertos} correctas de ${cantP})`, 50, 260);
 
-      finalBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
-      src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      finalBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
     }
 
     async function enviarCalificacion() {
@@ -291,35 +251,22 @@
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PR"; else if(t.includes("REF")) tA="RE"; else if(t.includes("EVA")) tA="EV"; else if(t.includes("CON")) tA="CON";
-      
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
       
-      let fName = `${examenActual.curso}-${tA}-${nomA}-${ts}`;
-
       let payload = { 
         idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
         nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
         aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
         nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas,
-        preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas, imageBase64: finalBase64, fileName: fName 
+        preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas, imageBase64: finalBase64, fileName: `${examenActual.curso}-${tA}-${nomA}-${ts}`
       };
 
       try {
-        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) });
-        let result = await res.json();
-        
-        if (result.status === "success") { 
-          showNotif("¡Examen Guardado con Éxito!"); 
-          setTimeout(() => { volverAConfig(); }, 2500); 
-        } else {
-          throw new Error(result.message);
-        }
-      } catch (e) { 
-        alert("Error de conexión al guardar: " + e); 
-        document.getElementById('reviewButtons').style.display = 'block'; 
-      } finally { 
-        document.getElementById('loaderUpload').style.display = 'none'; 
-      }
+        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) }); let result = await res.json();
+        if (result.status === "success") { showNotif("¡Examen Guardado!"); setTimeout(() => { volverAConfig(); }, 2500); } 
+        else throw new Error(result.message);
+      } catch (e) { alert("Error al guardar: " + e); document.getElementById('reviewButtons').style.display = 'block'; } 
+      finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
 </body>
