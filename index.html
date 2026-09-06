@@ -89,9 +89,7 @@
     <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
     
     <canvas id="canvasResult"></canvas>
-    
     <div id="feedbackList"></div>
-
     <div class="loader" id="loaderUpload">⏳ Guardando en Sheets y descargando foto...</div>
     
     <div id="reviewButtons">
@@ -104,7 +102,7 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywyPRxa7bm2CYztvtduV7LTI43MnprY26vN-hbXQq1n-O9Nt0kwtZeHBWfHKT2U-k1Cg/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxrZTtFQEve-D23ertlf8iA_FkG93CdDzE18Sh6gT14UGicLaCG8Ee6m2vFZ-zCLuDKmg/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
@@ -151,7 +149,6 @@
       } else { document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled'); }
     }
 
-    // CLICK PARA ENFOCAR
     video.addEventListener('click', async () => {
       if (!stream) return;
       const track = stream.getVideoTracks()[0];
@@ -176,7 +173,6 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // REALIDAD AUMENTADA EN VIVO (Muestra si encontró los 4 cuadros)
     function processLiveAR() {
       if (!opencvReady || !video.videoWidth) return;
       overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
@@ -194,9 +190,9 @@
         let squares = [];
         for (let i = 0; i < contours.size(); ++i) {
           let cnt = contours.get(i); let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt);
-          let extent = area / (r.width * r.height);
-          // Buscar cuadrados sólidos negros (los fiduciales)
-          if (area > 150 && area < 5000 && extent > 0.7 && r.x > src.cols * 0.4) {
+          let extent = area / (r.width * r.height); let aspect = r.width / r.height;
+          // Buscamos 4 Cuadrados Sólidos
+          if (area > 150 && area < 5000 && aspect > 0.7 && aspect < 1.3 && extent > 0.7 && r.x > src.cols * 0.4) {
             squares.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
           }
         }
@@ -213,9 +209,6 @@
       } catch(e) {}
     }
 
-    // ==========================================
-    // CAPTURA Y MATRIZ MATEMÁTICA PURA
-    // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
       clearInterval(scanningInterval);
@@ -247,13 +240,13 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Buscar los 4 cuadrados negros de los bordes
       let squares = [];
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
         let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt); let aspect = r.width / r.height;
         let extent = area / (r.width * r.height);
         
+        // Detección de los Cuadrados Sólidos
         if (area > 150 && area < 6000 && aspect > 0.7 && aspect < 1.3 && extent > 0.7) {
           squares.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
         }
@@ -270,45 +263,52 @@
         squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
         squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
 
-        // Calcular Matriz Perfecta Aplanada
-        let targetW = opc * 50; let targetH = cantP * 50;
+        // Crear la Matriz de Perspectiva Matemática (100px por celda)
+        let cell_size = 100; let W = (opc - 1) * cell_size; let H = (cantP + 1) * cell_size; let margin = 50;
+        
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
-        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, 0, targetH, targetW, targetH]);
+        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [margin, margin, W+margin, margin, margin, H+margin, W+margin, H+margin]);
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
         
-        let warped = new cv.Mat(); let size = new cv.Size(targetW, targetH);
+        let warped = new cv.Mat(); let size = new cv.Size(W + margin*2, H + margin*2);
         cv.warpPerspective(roiThresh, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
         let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
         let feedbackHTML = `<div style="text-align:center; font-weight:bold; margin-bottom:8px; color:white;">DETALLE DE EVALUACIÓN:</div>`;
 
-        for (let r = 0; r < cantP; r++) {
+        // Navegación exacta por la cuadrícula matemática
+        for (let r = 1; r <= cantP; r++) { // r=1 porque r=0 es la fila de marcadores
           let maxP = 0; let idxM = -1;
+          
           for (let c = 0; c < opc; c++) {
-            let cx = c * 50 + 25; let cy = r * 50 + 25;
-            let cellRect = new cv.Rect(cx - 10, cy - 10, 20, 20); 
+            let cx = c * cell_size + margin; let cy = r * cell_size + margin;
+            let boxSize = 40; 
+            let rx = cx - boxSize/2; let ry = cy - boxSize/2;
+            let cellRect = new cv.Rect(rx, ry, boxSize, boxSize); 
             let roiC = warped.roi(cellRect);
             let p = cv.countNonZero(roiC);
             roiC.delete();
             
-            // Umbral muy bajo para leer lápices claros
-            if (p > maxP && p > (20 * 20 * 0.15)) { maxP = p; idxM = c; }
+            // Sensibilidad altísima para lápiz claro (Si llena > 12% del cuadrito)
+            if (p > maxP && p > (boxSize * boxSize * 0.12)) { maxP = p; idxM = c; }
           }
 
-          let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; let lC = clave[r];
+          let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; let lC = clave[r-1];
           let color = (lM === lC) ? "green" : "red";
-          if (lM === lC) { aciertos++; feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Preg. ${r+1}: Marcó ${lM}</div>`; } 
-          else { incorrectasArray.push(r+1); feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Preg. ${r+1}: Marcó ${lM} (Era ${lC})</div>`; }
-          detalleArray.push(`${r+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
+          
+          if (lM === lC) { aciertos++; feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Preg. ${r}: Marcó ${lM}</div>`; } 
+          else { incorrectasArray.push(r); feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Preg. ${r}: Marcó ${lM} (Era ${lC})</div>`; }
+          detalleArray.push(`${r}:${lM}(${lM===lC?'OK':'❌'+lC})`);
 
+          // Dibujar usando perspectiva inversa
           if (idxM >= 0) {
             let M_inv = cv.getPerspectiveTransform(dstTri, srcTri);
-            let cx = idxM * 50 + 25; let cy = r * 50 + 25;
+            let cx = idxM * cell_size + margin; let cy = r * cell_size + margin;
             let ptMat = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]); let outMat = new cv.Mat();
             cv.perspectiveTransform(ptMat, outMat, M_inv);
             let origX = roiStartX + outMat.data32F[0]; let origY = outMat.data32F[1];
             
-            ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+            ctx.beginPath(); ctx.lineWidth=8; ctx.strokeStyle=color;
             ctx.arc(origX, origY, 20, 0, 2*Math.PI); ctx.stroke();
             ptMat.delete(); outMat.delete(); M_inv.delete();
           }
@@ -322,17 +322,21 @@
         let posX = canvas.width - anchoTexto - 30; let posY = 80; 
         ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY); ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
 
+        ctx.font = "bold 35px Arial"; let textoAciertos = `(${aciertos} aciertos)`; let anchoSub = ctx.measureText(textoAciertos).width;
+        let posXSub = canvas.width - anchoSub - 30; let posYSub = posY + 40;
+        ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub); ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
+
         srcTri.delete(); dstTri.delete(); M.delete(); warped.delete();
       }
+
+      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
 
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
-
-      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
     }
 
     function guardarImagenLocal(base64, filename) {
