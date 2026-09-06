@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Local Save & Crop</title>
+  <title>OMR Scanner Pro - Acceso Seguro</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -13,22 +13,21 @@
     .panel { display: none; flex-direction: column; padding: 15px; width: 100%; max-width: 600px; margin: 0 auto; box-sizing: border-box; }
     .panel.active { display: flex; }
 
-    .card { background: var(--card); padding: 15px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    .card label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;}
-    .card select { width: 100%; padding: 12px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px; font-size: 1rem; margin-bottom: 10px; outline: none; }
-    
+    .card { background: var(--card); padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    .card label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;}
+    .card select, .card input { width: 100%; padding: 14px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px; font-size: 1rem; margin-bottom: 10px; outline: none; box-sizing: border-box;}
+    .card input:focus { border-color: var(--primary); }
+
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CON RECORTE TAMAÑO CARTA (8.5 / 11) */
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
-    video { width: 100%; height: 100%; object-fit: cover; } /* Se mostrará cortado a los bordes verdes */
-    
+    video { width: 100%; height: 100%; object-fit: cover; } 
+    canvas { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
+
     .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.95rem; text-shadow: 1px 1px 4px #000;}
 
-    /* LISTA DE REVISIÓN Y CANVAS */
-    #canvasResult { width: 100%; height: auto; border-radius: 10px; border: 2px solid #334155; margin-bottom: 15px;}
     #feedbackList { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 15px; border: 1px solid #334155; }
     .fb-item { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #334155; }
 
@@ -36,6 +35,8 @@
     #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100;}
     #reviewWarning { background: #b91c1c; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9rem; font-weight: bold; text-align: center; display: none; border: 2px solid #f87171;}
     .info-text { text-align: center; font-size: 1rem; margin-bottom: 12px; color: #94a3b8; font-weight: bold; }
+    
+    .lock-icon { font-size: 3rem; text-align: center; display: block; margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -43,23 +44,33 @@
   <header>OMR Scanner Pro</header>
   <div id="notif">Cargando...</div>
 
-  <!-- PANEL 1 -->
-  <div id="panel-config" class="panel active">
-    <div class="card">
-      <label>1. Sincronizar Base de Datos</label>
-      <button class="btn btn-primary" id="btnSync" onclick="fetchData()">🔄 Descargar Exámenes</button>
-      <div id="syncStatus" style="font-size: 0.85rem; color: #10b981; text-align: center; margin-top: 5px;"></div>
+  <!-- PANEL 0: LOGIN DE SEGURIDAD -->
+  <div id="panel-login" class="panel active">
+    <div class="card" style="margin-top: 20px;">
+      <span class="lock-icon">🔒</span>
+      <h2 style="text-align: center; margin-top: 0;">Acceso Restringido</h2>
+      <label>Ingrese su PIN de Seguridad:</label>
+      <input type="password" id="inputPin" placeholder="••••••••">
+      <button class="btn btn-primary" id="btnLogin" onclick="iniciarSesion()">Verificar e Ingresar</button>
     </div>
+  </div>
+
+  <!-- PANEL 1: CONFIGURACIÓN -->
+  <div id="panel-config" class="panel">
     <div class="card" id="selectionCard" style="display:none;">
-      <label>2. Seleccionar Examen</label><select id="selExamen" onchange="actualizarListaEstudiantes()"><option value="">-- Elija un examen --</option></select>
-      <label>3. Estudiante a Evaluar</label><select id="selEstudiante"><option value="">-- Seleccione estudiante --</option></select>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <span style="color:#10b981; font-weight:bold; font-size:0.85rem;">✔️ Conectado y Seguro</span>
+        <button onclick="cerrarSesion()" style="background:transparent; border:1px solid #ef4444; color:#ef4444; padding:5px 10px; border-radius:5px; cursor:pointer;">Cerrar Sesión</button>
+      </div>
+      <label>1. Seleccionar Examen</label><select id="selExamen" onchange="actualizarListaEstudiantes()"><option value="">-- Elija un examen --</option></select>
+      <label>2. Estudiante a Evaluar</label><select id="selEstudiante"><option value="">-- Seleccione estudiante --</option></select>
     </div>
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA (Marco Fijo) -->
+  <!-- PANEL 2: CÁMARA -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Llene todo el recuadro verde con la hoja...</div>
+    <div class="info-text" id="infoScanText">Llene el marco verde con la hoja...</div>
     <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
       <div class="guide-text">Recuadro de Captura OMR</div>
@@ -68,15 +79,13 @@
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: REVISIÓN DE IMAGEN Y DESCARGA -->
+  <!-- PANEL 3: REVISIÓN -->
   <div id="panel-review" class="panel">
     <div id="reviewWarning">⚠️ La lectura parece incompleta. Verifique la luz o retome la foto.</div>
-    <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
+    <div class="info-text" style="color: #fbbf24;">Revise la lectura. Al confirmar se guardará en su celular.</div>
     
     <canvas id="canvasResult"></canvas>
-    
     <div id="feedbackList"></div>
-
     <div class="loader" id="loaderUpload">⏳ Guardando en Sheets y descargando foto...</div>
     
     <div id="reviewButtons">
@@ -89,27 +98,80 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWhHUPw_DM9N98rJyOzNVq7gH94tsXJKN5uJJ19YXMvtpc3BlnkBAyGUqOjjZfnMknag/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwtx9nR03xcLrN9R_exXj4OCoMLGeULUUwAqCuS1OWURCEmmrNZXlMIYVsiZUswxd-x4Q/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
+    
+    let userPin = ""; // Guarda el PIN temporalmente en memoria
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
     function switchPanel(pid) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(pid).classList.add('active'); window.scrollTo(0,0); }
 
-    async function fetchData() {
-      document.getElementById('btnSync').innerText = "⏳ Descargando...";
+    // ==========================================
+    // SISTEMA DE SEGURIDAD (LOGIN)
+    // ==========================================
+    window.onload = () => {
+      let savedPin = localStorage.getItem("omr_pin");
+      if(savedPin) { document.getElementById("inputPin").value = savedPin; }
+    };
+
+    async function iniciarSesion() {
+      let pin = document.getElementById("inputPin").value.trim();
+      if (!pin) { alert("Por favor, ingrese un PIN"); return; }
+      
+      document.getElementById("btnLogin").innerText = "⏳ Verificando con Google Sheets...";
+      document.getElementById("btnLogin").classList.add("btn-disabled");
+
       try {
-        let response = await fetch(SCRIPT_URL); let data = await response.json();
-        dbExamenes = data.examenes; dbEstudiantes = data.estudiantes;
-        let selEx = document.getElementById('selExamen'); selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
+        // Enviar PIN a Apps Script por la URL (GET)
+        let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); 
+        let data = await response.json();
+        
+        if (data.status === "error") {
+          alert(data.message); // Mostrará "PIN incorrecto"
+          document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
+          document.getElementById("btnLogin").classList.remove("btn-disabled");
+          return;
+        }
+
+        // Si el PIN es correcto, cargamos los datos
+        userPin = pin;
+        localStorage.setItem("omr_pin", pin); // Guardamos para la próxima vez
+        
+        dbExamenes = data.examenes; 
+        dbEstudiantes = data.estudiantes;
+        
+        let selEx = document.getElementById('selExamen'); 
+        selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
-        document.getElementById('selectionCard').style.display = 'block'; document.getElementById('btnSync').innerText = "🔄 Actualizar BD"; document.getElementById('syncStatus').innerText = `✔️ Listos para evaluar.`;
-      } catch (err) { alert("Error. Revise su internet."); }
+        
+        document.getElementById('selectionCard').style.display = 'block'; 
+        switchPanel('panel-config');
+        showNotif("✅ Acceso Concedido");
+
+      } catch (err) { 
+        alert("Error de conexión. Revise su internet o la URL del script."); 
+        document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
+        document.getElementById("btnLogin").classList.remove("btn-disabled");
+      }
     }
 
+    function cerrarSesion() {
+      userPin = "";
+      localStorage.removeItem("omr_pin");
+      document.getElementById("inputPin").value = "";
+      document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
+      document.getElementById("btnLogin").classList.remove("btn-disabled");
+      document.getElementById('selectionCard').style.display = 'none'; 
+      switchPanel('panel-login');
+    }
+
+    // ==========================================
+    // INTERFAZ Y CÁMARA
+    // ==========================================
     function actualizarListaEstudiantes() {
       examenActual = dbExamenes.find(e => e.id === document.getElementById('selExamen').value);
       let selEst = document.getElementById('selEstudiante'); selEst.innerHTML = '<option value="">-- Seleccione estudiante --</option>';
@@ -125,11 +187,7 @@
       switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
       
       const constraints = { 
-        video: { 
-          facingMode: "environment", 
-          width: { ideal: 1920 }, height: { ideal: 1080 },
-          advanced: [{ focusMode: "continuous" }] // AUTOENFOQUE FORZADO
-        } 
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } 
       };
 
       try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } 
@@ -141,47 +199,35 @@
     function reintentarFoto() { switchPanel('panel-camera'); }
 
     // ==========================================
-    // ANÁLISIS DE MATRIZ CON CORTE EXACTO Y CRUCES
+    // PROCESAMIENTO OPENCV
     // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
       
-      // 1. Matemáticas para recortar el video exactamente al marco verde (Object-fit cover)
       const wrapper = document.getElementById('cameraWrapper');
-      const wRatio = wrapper.clientWidth / wrapper.clientHeight; // 8.5/11
+      const wRatio = wrapper.clientWidth / wrapper.clientHeight;
       const vW = video.videoWidth; const vH = video.videoHeight;
       const vRatio = vW / vH;
       
       let cropW, cropH, cropX, cropY;
       if (vRatio > wRatio) {
-          // El video es más ancho que el recuadro
-          cropH = vH;
-          cropW = vH * wRatio;
-          cropX = (vW - cropW) / 2;
-          cropY = 0;
+          cropH = vH; cropW = vH * wRatio;
+          cropX = (vW - cropW) / 2; cropY = 0;
       } else {
-          // El video es más alto que el recuadro
-          cropW = vW;
-          cropH = vW / wRatio;
-          cropX = 0;
-          cropY = (vH - cropH) / 2;
+          cropW = vW; cropH = vW / wRatio;
+          cropX = 0; cropY = (vH - cropH) / 2;
       }
 
       canvas.width = cropW; canvas.height = cropH;
-      // Dibujamos al Canvas SOLAMENTE la parte que estaba dentro del recuadro verde
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
       switchPanel('panel-review');
 
-      // 2. Procesamiento OpenCV
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-
       let thresh = new cv.Mat();
-      // Otsu ayuda mucho mejor al grafito de los lápices que Adaptive si hay buena luz uniforme
       cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
 
-      // El OMR está en el 40% derecho
       let roiStartX = Math.floor(cropW * 0.60);
       let roiWidth = cropW - roiStartX;
       let rect = new cv.Rect(roiStartX, 0, roiWidth, cropH);
@@ -190,10 +236,8 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Buscar Círculos (Burbujas)
+      let marcadores = [];
       let burbujas = [];
-      let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
-      let sumW = 0, sumH = 0;
 
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
@@ -201,13 +245,12 @@
         let area = cv.contourArea(cnt);
         let perimeter = cv.arcLength(cnt, true);
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
-        
-        // Círculos (Burbujas)
-        if (area > 150 && area < 6000 && circularity > 0.65) {
+        let aspect = r.width / r.height;
+
+        if (area > 300 && area < 5000 && aspect > 0.8 && aspect < 1.2 && circularity < 0.85) {
+          marcadores.push(r);
+        } else if (area > 150 && area < 6000 && circularity > 0.75) {
           burbujas.push(r);
-          if (r.x < minX) minX = r.x; if (r.y < minY) minY = r.y;
-          if (r.x + r.width > maxX) maxX = r.x + r.width; if (r.y + r.height > maxY) maxY = r.y + r.height;
-          sumW += r.width; sumH += r.height;
         }
       }
 
@@ -215,7 +258,16 @@
       let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      if (burbujas.length < (cantP * opc) / 2) { reviewWarning.style.display = 'block'; } else { reviewWarning.style.display = 'none'; }
+      if (burbujas.length < (cantP * opc) / 2 && marcadores.length < 3) {
+        reviewWarning.style.display = 'block';
+      } else { reviewWarning.style.display = 'none'; }
+
+      let minX = 9999, minY = 9999, maxX = 0, maxY = 0, sumW = 0, sumH = 0;
+      burbujas.forEach(b => {
+        if(b.x < minX) minX = b.x; if(b.y < minY) minY = b.y;
+        if(b.x+b.width > maxX) maxX = b.x+b.width; if(b.y+b.height > maxY) maxY = b.y+b.height;
+        sumW += b.width; sumH += b.height;
+      });
 
       let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
       let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
@@ -239,8 +291,7 @@
           let p = cv.countNonZero(roiB);
           roiB.delete();
 
-          // Umbral muy sensible (12% del recuadro) para lápices claros
-          if (p > maxP && p > (scanW * scanH * 0.12)) { maxP = p; idxM = j; }
+          if (p > maxP && p > (scanW * scanH * 0.15)) { maxP = p; idxM = j; }
         }
 
         let lResp = ["A", "B", "C", "D"]; 
@@ -274,7 +325,6 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // DIBUJAR NOTA PEQUEÑA EN ESQUINA SUPERIOR DERECHA
       ctx.font = "bold 65px Arial";
       let textoNota = `NOTA: ${notaSobre100}/100`;
       let anchoTexto = ctx.measureText(textoNota).width;
@@ -296,7 +346,7 @@
       finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
       src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
 
-      // NOMBRAMIENTO DEL ARCHIVO PARA DESCARGA: CURSO-TIPO-NOMBRE-TIPO-MINSEGDIAMESAÑO
+      // NOMBRAMIENTO DEL ARCHIVO PARA DESCARGA
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
@@ -306,9 +356,6 @@
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
     }
 
-    // ==========================================
-    // GUARDAR EN SHEETS Y DESCARGAR FOTO LOCAL (NO ENVIAR BASE64)
-    // ==========================================
     function guardarImagenLocal(base64, filename) {
         const link = document.createElement("a");
         link.href = "data:image/jpeg;base64," + base64;
@@ -322,8 +369,9 @@
       document.getElementById('reviewButtons').style.display = 'none';
       document.getElementById('loaderUpload').style.display = 'block';
 
-      // ⚠️ ELIMINAMOS IMAGEBASE64 DEL PAYLOAD PARA NO SATURAR A GOOGLE
+      // ⚠️ ENVIAMOS EL PIN JUNTO CON LOS DATOS PARA VALIDAR
       let payload = { 
+        pin: userPin,
         idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
         nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
         aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
@@ -332,14 +380,24 @@
       };
 
       try {
-        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) }); let result = await res.json();
+        let res = await fetch(SCRIPT_URL, { 
+          method: "POST", 
+          body: JSON.stringify(payload),
+          headers: { "Content-Type": "text/plain;charset=utf-8" }
+        }); 
+        
+        let result = await res.json();
+        
         if (result.status === "success") { 
           guardarImagenLocal(finalBase64, finalFileName);
-          showNotif("¡Nota guardada y Foto descargada!"); 
+          showNotif("¡Nota enviada a Sheets y Foto descargada!"); 
           setTimeout(() => { volverAConfig(); }, 2500); 
         } 
         else throw new Error(result.message);
-      } catch (e) { alert("Error al subir a Sheets: " + e); document.getElementById('reviewButtons').style.display = 'block'; } 
+      } catch (e) { 
+        alert(e.message); 
+        document.getElementById('reviewButtons').style.display = 'block'; 
+      } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
