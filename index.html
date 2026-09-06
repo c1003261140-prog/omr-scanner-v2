@@ -20,8 +20,9 @@
 
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
-    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
+    /* CÁMARA TAMAÑO CARTA Y TOQUE PARA ENFOCAR */
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
     video { width: 100%; height: 100%; object-fit: cover; } 
     canvas { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
@@ -103,7 +104,7 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYJUeTaPhe_yiZ4Bc7tGTmI2yNl-167senabXL9B1h4HTZt6_D5gwZKJjOhgGgx2N3nQ/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywyPRxa7bm2CYztvtduV7LTI43MnprY26vN-hbXQq1n-O9Nt0kwtZeHBWfHKT2U-k1Cg/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
@@ -124,44 +125,21 @@
       if (!pin) { alert("Por favor, ingrese un PIN"); return; }
       
       document.getElementById("btnLogin").innerText = "⏳ Verificando con Google Sheets..."; document.getElementById("btnLogin").classList.add("btn-disabled");
-
       try {
-        let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); 
-        let data = await response.json();
-        
+        let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); let data = await response.json();
         if (data.status === "error") {
-          alert(data.message);
-          document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
-          document.getElementById("btnLogin").classList.remove("btn-disabled");
-          return;
+          alert(data.message); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); return;
         }
-
-        userPin = pin;
-        localStorage.setItem("omr_pin", pin);
-        
-        dbExamenes = data.examenes; 
-        dbEstudiantes = data.estudiantes;
-        
-        let selEx = document.getElementById('selExamen'); 
-        selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
+        userPin = pin; localStorage.setItem("omr_pin", pin);
+        dbExamenes = data.examenes; dbEstudiantes = data.estudiantes;
+        let selEx = document.getElementById('selExamen'); selEx.innerHTML = '<option value="">-- Elija un examen --</option>';
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
         
-        document.getElementById('selectionCard').style.display = 'block'; 
-        switchPanel('panel-config');
-        showNotif("✅ Acceso Concedido");
-
-      } catch (err) { 
-        alert("Error de conexión. Revise su internet o la URL del script."); 
-        document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
-        document.getElementById("btnLogin").classList.remove("btn-disabled");
-      }
+        document.getElementById('selectionCard').style.display = 'block'; switchPanel('panel-config'); showNotif("✅ Acceso Concedido");
+      } catch (err) { alert("Error de conexión. Revise su internet o la URL del script."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
     }
 
-    function cerrarSesion() {
-      userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = "";
-      document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled");
-      document.getElementById('selectionCard').style.display = 'none'; switchPanel('panel-login');
-    }
+    function cerrarSesion() { userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = ""; document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); document.getElementById('selectionCard').style.display = 'none'; switchPanel('panel-login'); }
 
     function actualizarListaEstudiantes() {
       examenActual = dbExamenes.find(e => e.id === document.getElementById('selExamen').value);
@@ -173,6 +151,7 @@
       } else { document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled'); }
     }
 
+    // CLICK PARA ENFOCAR
     video.addEventListener('click', async () => {
       if (!stream) return;
       const track = stream.getVideoTracks()[0];
@@ -188,8 +167,7 @@
       switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
       
       const constraints = { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } };
-      try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } 
-      catch (err) { alert("Permita acceso a la cámara."); }
+      try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } catch (err) { alert("Permita acceso a la cámara."); }
       
       scanningInterval = setInterval(processLiveAR, 300);
     }
@@ -198,6 +176,7 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
+    // REALIDAD AUMENTADA EN VIVO (Muestra si encontró los 4 cuadros)
     function processLiveAR() {
       if (!opencvReady || !video.videoWidth) return;
       overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
@@ -216,6 +195,7 @@
         for (let i = 0; i < contours.size(); ++i) {
           let cnt = contours.get(i); let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt);
           let extent = area / (r.width * r.height);
+          // Buscar cuadrados sólidos negros (los fiduciales)
           if (area > 150 && area < 5000 && extent > 0.7 && r.x > src.cols * 0.4) {
             squares.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
           }
@@ -233,9 +213,12 @@
       } catch(e) {}
     }
 
+    // ==========================================
+    // CAPTURA Y MATRIZ MATEMÁTICA PURA
+    // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      clearInterval(scanningInterval); 
+      clearInterval(scanningInterval);
 
       const wrapper = document.getElementById('cameraWrapper');
       const wRatio = wrapper.clientWidth / wrapper.clientHeight;
@@ -264,6 +247,7 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
+      // Buscar los 4 cuadrados negros de los bordes
       let squares = [];
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
@@ -286,6 +270,7 @@
         squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
         squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
 
+        // Calcular Matriz Perfecta Aplanada
         let targetW = opc * 50; let targetH = cantP * 50;
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
         let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, 0, targetH, targetW, targetH]);
@@ -306,6 +291,7 @@
             let p = cv.countNonZero(roiC);
             roiC.delete();
             
+            // Umbral muy bajo para leer lápices claros
             if (p > maxP && p > (20 * 20 * 0.15)) { maxP = p; idxM = c; }
           }
 
@@ -332,7 +318,6 @@
         let notaSobre100 = Math.round((aciertos / cantP) * 100);
         dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-        // DIBUJAR NOTA EN ESQUINA SUPERIOR DERECHA
         ctx.font = "bold 65px Arial"; let textoNota = `NOTA: ${notaSobre100}/100`; let anchoTexto = ctx.measureText(textoNota).width;
         let posX = canvas.width - anchoTexto - 30; let posY = 80; 
         ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY); ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
@@ -340,14 +325,14 @@
         srcTri.delete(); dstTri.delete(); M.delete(); warped.delete();
       }
 
-      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
-
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
+
+      finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
     }
 
     function guardarImagenLocal(base64, filename) {
@@ -358,23 +343,18 @@
     async function enviarCalificacion() {
       document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
 
-      // ⚠️ AQUÍ ENVIAMOS fileName DENTRO DEL PAYLOAD HACIA GOOGLE SHEETS
       let payload = { 
         pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
         nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
         aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
         nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas, preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas,
-        fileName: finalFileName // <--- Este es el nombre del archivo JPG
+        fileName: finalFileName
       };
 
       try {
         let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
         let result = await res.json();
-        if (result.status === "success") { 
-          guardarImagenLocal(finalBase64, finalFileName); 
-          showNotif("¡Nota enviada a Sheets y Foto descargada!"); 
-          setTimeout(() => { volverAConfig(); }, 2500); 
-        } 
+        if (result.status === "success") { guardarImagenLocal(finalBase64, finalFileName); showNotif("¡Nota enviada a Sheets y Foto descargada!"); setTimeout(() => { volverAConfig(); }, 2500); } 
         else throw new Error(result.message);
       } catch (e) { alert("Error al subir a Sheets: " + e.message); document.getElementById('reviewButtons').style.display = 'block'; } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
