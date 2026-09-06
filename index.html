@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Triángulos Magnéticos</title>
+  <title>OMR Scanner Pro - Precision Focus</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -74,9 +74,9 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA -->
+  <!-- PANEL 2: CÁMARA FULL PAGE -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Toque el video para enfocar. Llene el recuadro verde.</div>
+    <div class="info-text" id="infoScanText">Encuadre toda la hoja en el margen.</div>
     <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
       <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
@@ -88,8 +88,8 @@
 
   <!-- PANEL 3: REVISIÓN DE IMAGEN Y EDICIÓN -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ Lectura incompleta. Revisa la luz o si la hoja está muy chueca.</div>
-    <div class="info-text" style="color: #fbbf24;">Si el alumno se equivocó, edite las respuestas manualmente:</div>
+    <div id="reviewWarning">⚠️ Lectura incompleta. Revise la captura o edite manualmente.</div>
+    <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
     
     <canvas id="canvasResult"></canvas>
     
@@ -119,9 +119,8 @@
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     
     let userPin = ""; let scanningInterval = null;
-    let arregloRespuestasManuales = [];
-    
-    // VARIABLES PARA CONGELAR LA IMAGEN
+    let originalImageMat = null; // Guardar la foto original para repintar notas
+    let arregloRespuestasManuales = []; 
     let cropStartX = 0, cropStartY = 0;
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
@@ -146,7 +145,7 @@
         dbExamenes.forEach(ex => { let opt = document.createElement('option'); opt.value = ex.id; opt.innerText = `[${ex.id}] ${ex.tema}`; selEx.appendChild(opt); });
         
         document.getElementById('selectionCard').style.display = 'block'; switchPanel('panel-config'); showNotif("✅ Acceso Concedido");
-      } catch (err) { alert("Error de conexión. Revise su internet o la URL del script."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
+      } catch (err) { alert("Error de conexión. Revise su internet o URL."); document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); }
     }
 
     function cerrarSesion() { userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = ""; document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled"); document.getElementById('selectionCard').style.display = 'none'; switchPanel('panel-login'); }
@@ -164,8 +163,7 @@
     // TOQUE PARA ENFOCAR
     video.addEventListener('click', async () => {
       if (!stream) return;
-      const track = stream.getVideoTracks()[0];
-      const caps = track.getCapabilities();
+      const track = stream.getVideoTracks()[0]; const caps = track.getCapabilities();
       if (caps.focusMode && caps.focusMode.includes("single-shot")) {
           await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
           showNotif("Enfocando...", "var(--primary)");
@@ -186,9 +184,38 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // ==========================================
-    // DETECCIÓN DE TRIÁNGULOS (AR) Y EXTENT=0.5
-    // ==========================================
+    // DETECCIÓN DE PATRONES CONCÉNTRICOS EN TIEMPO REAL
+    function getFinderPatterns(srcMat) {
+      let gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY, 0);
+      let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+
+      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
+      cv.findContours(thresh, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
+
+      let patterns = [];
+      for (let i = 0; i < contours.size(); ++i) {
+        let h = hierarchy.intPtr(0, i);
+        let child = h[2];
+        if (child !== -1) {
+          let hChild = hierarchy.intPtr(0, child);
+          let grandChild = hChild[2];
+          if (grandChild !== -1) { // 3 niveles de jerarquía = Cuadrado anidado
+            let cnt = contours.get(i); let area = cv.contourArea(cnt);
+            if (area > 150 && area < 8000) {
+              let r = cv.boundingRect(cnt);
+              patterns.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
+            }
+          }
+        }
+      }
+      gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      
+      // Filtrar duplicados cercanos
+      let unique = [];
+      patterns.forEach(p => { if (!unique.find(u => Math.abs(u.x - p.x) < 20 && Math.abs(u.y - p.y) < 20)) unique.push(p); });
+      return unique;
+    }
+
     function processLiveAR() {
       if (!opencvReady || !video.videoWidth) return;
       overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
@@ -197,36 +224,22 @@
       
       try {
         let src = cv.imread(overlayCanvas);
-        let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
-
-        let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
-        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-        let triangulos = [];
-        for (let i = 0; i < contours.size(); ++i) {
-          let cnt = contours.get(i); let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt);
-          let extent = area / (r.width * r.height); let aspect = r.width / r.height;
-          
-          // UN TRIÁNGULO TIENE UN EXTENT EXACTO DE ~0.50 (Ocupa la mitad del cuadrado)
-          if (area > 200 && area < 6000 && extent > 0.40 && extent < 0.65 && aspect > 0.8 && aspect < 1.4 && r.x > src.cols * 0.4) {
-            triangulos.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
-          }
-        }
+        let targets = getFinderPatterns(src);
         
         ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        if (triangulos.length >= 4) {
-          triangulos.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = triangulos[0]; let br = triangulos[triangulos.length-1];
-          triangulos.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = triangulos[0]; let tr = triangulos[triangulos.length-1];
+        
+        // Dibuja marco verde si encuentra al menos 4
+        if (targets.length >= 4) {
+          targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
+          targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
           
           ctxOverlay.beginPath(); ctxOverlay.moveTo(tl.x, tl.y); ctxOverlay.lineTo(tr.x, tr.y); ctxOverlay.lineTo(br.x, br.y); ctxOverlay.lineTo(bl.x, bl.y); ctxOverlay.closePath();
           ctxOverlay.lineWidth = 4; ctxOverlay.strokeStyle = "rgba(16, 185, 129, 0.8)"; ctxOverlay.stroke();
         }
-        src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+        src.delete();
       } catch(e) {}
     }
 
-    // CAPTURA CON CONGELAMIENTO DE IMAGEN
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
       clearInterval(scanningInterval);
@@ -243,87 +256,73 @@
       canvas.width = cropW; canvas.height = cropH;
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // ¡ESTO CONGELA LA IMAGEN ORIGINAL EN MEMORIA PARA REDIBUJAR!
+      // CONGELAR FOTO ORIGINAL
       window.originalCaptureCanvas = document.createElement('canvas');
-      window.originalCaptureCanvas.width = canvas.width;
-      window.originalCaptureCanvas.height = canvas.height;
+      window.originalCaptureCanvas.width = canvas.width; window.originalCaptureCanvas.height = canvas.height;
       window.originalCaptureCanvas.getContext('2d').drawImage(canvas, 0, 0);
 
-      cropStartX = Math.floor(cropW * 0.40); // El OMR está del 40% en adelante
-      
       switchPanel('panel-review');
-      procesarDesdeMemoria(); // Llama a la matemática de evaluación
+      procesarDesdeMemoria();
     }
 
     function procesarDesdeMemoria() {
       let src = cv.imread(window.originalCaptureCanvas);
-      let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-      let thresh = new cv.Mat();
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
-
-      let roiWidth = src.cols - cropStartX;
-      let rect = new cv.Rect(cropStartX, 0, roiWidth, src.rows);
-      let roiThresh = thresh.roi(rect);
-
-      let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
-      cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-      let triangulos = [];
-      for (let i = 0; i < contours.size(); ++i) {
-        let cnt = contours.get(i);
-        let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt); let aspect = r.width / r.height;
-        let extent = area / (r.width * r.height);
-        
-        // Un triángulo perfecto CSS tiene Extent = 0.5. Filtramos de 0.40 a 0.65
-        if (area > 200 && area < 6000 && aspect > 0.8 && aspect < 1.4 && extent > 0.40 && extent < 0.65) {
-          triangulos.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
-        }
-      }
-
+      let targets = getFinderPatterns(src);
+      
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
 
-      if (triangulos.length < 4) {
+      if (targets.length < 4) {
         reviewWarning.style.display = 'block';
         arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
       } else { 
         reviewWarning.style.display = 'none'; 
         
-        triangulos.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = triangulos[0]; let br = triangulos[triangulos.length-1];
-        triangulos.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = triangulos[0]; let tr = triangulos[triangulos.length-1];
+        targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
+        targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
 
-        let targetW = opc * 50; let targetH = cantP * 50; let pad = 30;
+        // Creación Matriz Perfecta Aplanada (Con margen para incluir las burbujas completas)
+        let pad = 20; let cellW = 40; let cellH = 40;
+        let targetW = (opc + 1) * cellW; let targetH = (cantP + 1) * cellH;
+        
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
         let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [pad, pad, targetW+pad, pad, pad, targetH+pad, targetW+pad, targetH+pad]);
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
         
-        // Escaneamos en Escala de Grises original (sin threshold), para capturar sombras suaves de lápiz
-        let warpedGray = new cv.Mat(); let size = new cv.Size(targetW + pad*2, targetH + pad*2);
-        let roiGray = gray.roi(rect);
-        cv.warpPerspective(roiGray, warpedGray, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+        let warped = new cv.Mat(); let size = new cv.Size(targetW + pad*2, targetH + pad*2);
+        cv.warpPerspective(src, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+
+        // Filtro BLUR para solidificar líneas de bolígrafo débiles
+        let blurred = new cv.Mat(); cv.GaussianBlur(warped, blurred, new cv.Size(5, 5), 0);
+        let gray = new cv.Mat(); cv.cvtColor(blurred, gray, cv.COLOR_RGBA2GRAY, 0);
 
         arregloRespuestasManuales = [];
 
+        // Leer Matriz Escala de Grises (busca oscuridad promedio)
         for (let r = 0; r < cantP; r++) {
-          let minColor = 255; let idxM = -1; // En grises, más oscuro = menor número (0 = negro total)
+          let minColor = 255; let idxM = -1;
           for (let c = 0; c < opc; c++) {
-            let cx = c * 50 + pad; let cy = r * 50 + pad;
+            let cx = (c + 1) * cellW + pad; let cy = (r + 0.5) * cellH + pad;
             let cellRect = new cv.Rect(cx - 10, cy - 10, 20, 20); 
-            let roiC = warpedGray.roi(cellRect);
-            let meanColor = cv.mean(roiC).val[0]; 
-            roiC.delete();
             
-            // Si el tono promedio del cuadrado baja de 190 (está marcado a lápiz)
-            if (meanColor < minColor && meanColor < 190) { minColor = meanColor; idxM = c; }
+            // Validar límites
+            if(cellRect.x >= 0 && cellRect.y >= 0 && cellRect.x + cellRect.width <= gray.cols && cellRect.y + cellRect.height <= gray.rows) {
+              let roiC = gray.roi(cellRect);
+              let meanColor = cv.mean(roiC).val[0]; // 0 es negro profundo, 255 es blanco puro
+              roiC.delete();
+              
+              // Umbral < 185 es ideal para detectar lápiz débil sobre papel blanco
+              if (meanColor < minColor && meanColor < 185) { minColor = meanColor; idxM = c; }
+            }
           }
           let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO";
           arregloRespuestasManuales.push(lM);
         }
-        srcTri.delete(); dstTri.delete(); M.delete(); warpedGray.delete(); roiGray.delete();
+        srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); blurred.delete(); gray.delete();
       }
 
       generarEditorManualYCalcular();
-      src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
+      src.delete();
 
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
@@ -334,7 +333,7 @@
 
     function actualizarRespuesta(idxPregunta, nuevoValor) {
       arregloRespuestasManuales[idxPregunta] = nuevoValor;
-      generarEditorManualYCalcular(); // Recalcula SIN volver a sacar foto
+      generarEditorManualYCalcular(); // Redibuja nota sobre la foto original en memoria (Sin usar la cámara)
     }
 
     function generarEditorManualYCalcular() {
@@ -359,7 +358,7 @@
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
       dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-      // REDIBUJAMOS LA IMAGEN CONGELADA (Evita la distorsión y fotos infinitas)
+      // REDIBUJAR NOTA SOBRE LA FOTO CONGELADA (Para que quede guardada en el JPG)
       ctx.drawImage(window.originalCaptureCanvas, 0, 0); 
       
       let textoNota = `NOTA: ${notaSobre100}/100`;
