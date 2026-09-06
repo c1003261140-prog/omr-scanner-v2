@@ -33,7 +33,8 @@
     .editor-title { font-size: 1rem; font-weight: bold; color: #f8fafc; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #334155; padding-bottom: 5px;}
     .edit-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 6px; background: #0f172a; border-radius: 6px;}
     .edit-row span { font-size: 0.9rem; font-weight: bold; }
-    .edit-row select { width: 80px; padding: 6px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 4px; font-weight: bold; font-size: 1rem; text-align: center; }
+    .edit-row select { width: 90px; padding: 8px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 4px; font-weight: bold; font-size: 1rem; text-align: center; outline: none; }
+    .edit-row select:focus { border-color: #3b82f6; }
     .c-ok { color: #10b981; } .c-err { color: #ef4444; }
 
     .loader { text-align: center; padding: 20px; color: #38bdf8; font-weight: bold; display: none; }
@@ -86,11 +87,13 @@
 
   <!-- PANEL 3: REVISIÓN DE IMAGEN Y EDICIÓN -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ Lectura incompleta. Revise la captura o edite manualmente.</div>
+    <div id="reviewWarning">⚠️ La lectura automática falló. Por favor, edite las notas manualmente guiándose por la foto.</div>
     <div class="info-text" style="color: #fbbf24;">Si el alumno se equivocó, edite las respuestas:</div>
     
+    <!-- Canvas donde se muestra la foto capturada -->
     <canvas id="canvasResult"></canvas>
     
+    <!-- MÓDULO EDITOR MANUAL ROBUSTO -->
     <div id="manualEditor">
       <div class="editor-title">✏️ EDICIÓN MANUAL DE RESPUESTAS</div>
       <div id="editorFilas"></div>
@@ -116,8 +119,10 @@
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     
     let userPin = ""; let scanningInterval = null;
-    let arregloRespuestasManuales = [];
-    
+    let originalImageMat = null; // Guardar la foto original intacta
+    let arregloRespuestasManuales = []; 
+    let MatrizPerspectivaInversa = null; // Guardamos la matriz para redibujar si está disponible
+
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
     function switchPanel(pid) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(pid).classList.add('active'); window.scrollTo(0,0); }
@@ -177,39 +182,36 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // DETECTAR LOS 4 PATRONES CONCÉNTRICOS EN JERARQUÍA (RETR_TREE)
-    function getConcentricMarkers(srcMat) {
+    // DETECCIÓN DE PATRONES CONCÉNTRICOS MÁS FLEXIBLE
+    function getFinderPatterns(srcMat) {
       let gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY, 0);
       let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(thresh, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
 
-      let targets = [];
+      let patterns = [];
       for (let i = 0; i < contours.size(); ++i) {
         let h = hierarchy.intPtr(0, i);
         let child = h[2];
         if (child !== -1) {
           let hChild = hierarchy.intPtr(0, child);
           let grandChild = hChild[2];
-          // Busca "Abuelo > Padre > Hijo" (Un cuadrado dentro de otro)
+          // 3 niveles de profundidad (Patrón Concéntrico)
           if (grandChild !== -1) { 
-            let cnt = contours.get(i);
-            let r = cv.boundingRect(cnt);
-            let area = cv.contourArea(cnt);
-            let aspect = r.width / r.height;
-            // Filtro geométrico para aislar la forma
-            if (area > 100 && area < 5000 && aspect > 0.7 && aspect < 1.3 && r.x > srcMat.cols * 0.4) {
-              targets.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
+            let cnt = contours.get(i); let area = cv.contourArea(cnt);
+            let r = cv.boundingRect(cnt); let aspect = r.width / r.height;
+            // FLEXIBLE: Área desde muy pequeña (40) por si está lejos, y permite cierta deformación de perspectiva (aspect 0.5 a 1.8)
+            if (area > 40 && area < 10000 && aspect > 0.5 && aspect < 1.8 && r.x > srcMat.cols * 0.3) {
+              patterns.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
             }
           }
         }
       }
+      gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
       
       let unique = [];
-      targets.forEach(p => { if (!unique.find(u => Math.abs(u.x - p.x) < 20 && Math.abs(u.y - p.y) < 20)) unique.push(p); });
-      
-      gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      patterns.forEach(p => { if (!unique.find(u => Math.abs(u.x - p.x) < 20 && Math.abs(u.y - p.y) < 20)) unique.push(p); });
       return unique;
     }
 
@@ -221,13 +223,13 @@
       
       try {
         let src = cv.imread(overlayCanvas);
-        let markers = getConcentricMarkers(src);
+        let targets = getFinderPatterns(src);
         
         ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         
-        if (markers.length >= 4) {
-          markers.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = markers[0]; let br = markers[markers.length-1];
-          markers.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = markers[0]; let tr = markers[markers.length-1];
+        if (targets.length >= 4) {
+          targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
+          targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
           
           ctxOverlay.beginPath(); ctxOverlay.moveTo(tl.x, tl.y); ctxOverlay.lineTo(tr.x, tr.y); ctxOverlay.lineTo(br.x, br.y); ctxOverlay.lineTo(bl.x, bl.y); ctxOverlay.closePath();
           ctxOverlay.lineWidth = 4; ctxOverlay.strokeStyle = "rgba(16, 185, 129, 0.8)"; ctxOverlay.stroke();
@@ -238,7 +240,7 @@
 
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      clearInterval(scanningInterval);
+      clearInterval(scanningInterval); // Detener el AR
 
       const wrapper = document.getElementById('cameraWrapper');
       const wRatio = wrapper.clientWidth / wrapper.clientHeight;
@@ -252,53 +254,70 @@
       canvas.width = cropW; canvas.height = cropH;
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // GUARDA FOTO ORIGINAL EN CACHÉ PARA EDICIÓN MANUAL
+      // GUARDA FOTO ORIGINAL INTACTA PARA DIBUJAR ENCIMA AL EDITAR
       window.originalCaptureCanvas = document.createElement('canvas');
       window.originalCaptureCanvas.width = canvas.width; window.originalCaptureCanvas.height = canvas.height;
       window.originalCaptureCanvas.getContext('2d').drawImage(canvas, 0, 0);
 
+      // Cambiamos la vista Inmediatamente para que el usuario no se quede esperando
       switchPanel('panel-review');
-      procesarDesdeMemoria();
+      
+      // Procesamiento con Try-Catch seguro
+      try {
+        procesarDesdeMemoria();
+      } catch (error) {
+        // SI ALGO FALLA (Ej. matemáticas de OpenCV), cargamos la interfaz vacía
+        console.error(error);
+        MatrizPerspectivaInversa = null;
+        let cantP = examenActual.cant_preguntas;
+        arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
+        document.getElementById('reviewWarning').style.display = 'block';
+        generarEditorManualYCalcular();
+      }
     }
 
     function procesarDesdeMemoria() {
       let src = cv.imread(window.originalCaptureCanvas);
-      let markers = getConcentricMarkers(src);
+      let targets = getFinderPatterns(src);
       
       let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
+      
+      // Limpiamos la matriz inversa previa
+      if (MatrizPerspectivaInversa) { MatrizPerspectivaInversa.delete(); MatrizPerspectivaInversa = null; }
 
-      if (markers.length < 4) {
+      if (targets.length < 4) {
         reviewWarning.style.display = 'block';
         arregloRespuestasManuales = new Array(cantP).fill("BLANCO");
       } else { 
         reviewWarning.style.display = 'none'; 
         
-        markers.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = markers[0]; let br = markers[markers.length-1];
-        markers.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = markers[0]; let tr = markers[markers.length-1];
+        targets.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = targets[0]; let br = targets[targets.length-1];
+        targets.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = targets[0]; let tr = targets[targets.length-1];
 
         let pad = 20; let cellW = 35; let cellH = 35;
-        // El ancho de la matriz incluye los números (columna 0) + opciones.
         let targetW = (opc + 1) * cellW; let targetH = cantP * cellH;
         
         let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
         let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [pad, pad, targetW+pad, pad, pad, targetH+pad, targetW+pad, targetH+pad]);
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
         
+        // Guardar Inversa para redibujar más tarde
+        MatrizPerspectivaInversa = cv.getPerspectiveTransform(dstTri, srcTri);
+        
         let warped = new cv.Mat(); let size = new cv.Size(targetW + pad*2, targetH + pad*2);
         cv.warpPerspective(src, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
 
-        // Aplicar Blur y Grises para atrapar sombras de lápiz y bolígrafo azul
+        // Blur para atrapar líneas delgadas (lápiz tenue, diagonales)
         let blurred = new cv.Mat(); cv.GaussianBlur(warped, blurred, new cv.Size(5, 5), 0);
         let gray = new cv.Mat(); cv.cvtColor(blurred, gray, cv.COLOR_RGBA2GRAY, 0);
 
         arregloRespuestasManuales = [];
 
-        // Leer Matriz (buscando menor valor de luz/gris)
+        // Evaluar promedios de gris
         for (let r = 0; r < cantP; r++) {
           let minColor = 255; let idxM = -1;
           for (let c = 0; c < opc; c++) {
-            // Saltamos la columna 0 (la de los números)
             let cx = (c + 1) * cellW + pad; let cy = r * cellH + pad;
             let cellRect = new cv.Rect(cx, cy, cellW, cellH); 
             
@@ -307,8 +326,7 @@
               let meanColor = cv.mean(roiC).val[0];
               roiC.delete();
               
-              // Umbral < 185 es ideal para sombras de lápiz
-              if (meanColor < minColor && meanColor < 185) { minColor = meanColor; idxM = c; }
+              if (meanColor < minColor && meanColor < 190) { minColor = meanColor; idxM = c; }
             }
           }
           let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO";
@@ -320,6 +338,7 @@
       generarEditorManualYCalcular();
       src.delete(); 
 
+      // Nomenclatura del archivo local
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
@@ -327,11 +346,13 @@
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
     }
 
+    // DISPARADO CUANDO EL USUARIO CAMBIA UN DROPDOWN MANUALMENTE
     function actualizarRespuesta(idxPregunta, nuevoValor) {
       arregloRespuestasManuales[idxPregunta] = nuevoValor;
-      generarEditorManualYCalcular(); 
+      generarEditorManualYCalcular(); // Redibuja la interfaz (No usa la cámara, es instantáneo)
     }
 
+    // ESTA FUNCIÓN ES INFALIBLE Y SIEMPRE SE DIBUJA
     function generarEditorManualYCalcular() {
       let cantP = examenActual.cant_preguntas; let clave = examenActual.clave; let opc = examenActual.opciones;
       let htmlEditor = ""; let aciertos = 0; let detalleArray = []; let incorrectasArray = [];
@@ -354,14 +375,36 @@
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
       dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
 
-      // REDIBUJA EL SCORE SOBRE LA FOTO CONGELADA ORIGINAL
+      // Restaurar Imagen Base (Caché Original)
       ctx.drawImage(window.originalCaptureCanvas, 0, 0); 
       
+      // Si tenemos la matriz inversa (la lectura funcionó), dibujamos circulitos de colores en las burbujas
+      if (MatrizPerspectivaInversa) {
+        let pad = 20; let cellW = 35; let cellH = 35;
+        for (let r = 0; r < cantP; r++) {
+          let lM = arregloRespuestasManuales[r];
+          let lC = clave[r];
+          let idxM = ["A", "B", "C", "D"].indexOf(lM);
+          
+          if (idxM >= 0) {
+            let cx = (idxM + 1) * cellW + (cellW / 2) + pad; let cy = r * cellH + (cellH / 2) + pad;
+            let ptMat = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]); let outMat = new cv.Mat();
+            cv.perspectiveTransform(ptMat, outMat, MatrizPerspectivaInversa);
+            
+            let color = (lM === lC) ? "green" : "red";
+            ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+            ctx.arc(outMat.data32F[0], outMat.data32F[1], 18, 0, 2*Math.PI); ctx.stroke();
+            ptMat.delete(); outMat.delete();
+          }
+        }
+      }
+
+      // Cuadro de Nota Oscuro para tapar cualquier cosa debajo
       let textoNota = `NOTA: ${notaSobre100}/100`;
       ctx.font = "bold 65px Arial"; let anchoTexto = ctx.measureText(textoNota).width;
       let posX = canvas.width - anchoTexto - 30; let posY = 80; 
 
-      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(posX - 20, posY - 70, anchoTexto + 40, 130);
+      ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(posX - 20, posY - 70, anchoTexto + 40, 130);
       ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY); ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
 
       ctx.font = "bold 35px Arial"; let textoAciertos = `(${aciertos} aciertos)`; let anchoSub = ctx.measureText(textoAciertos).width;
