@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Acceso Seguro</title>
+  <title>OMR Scanner Pro - Math Matrix</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -20,13 +20,15 @@
 
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
-    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
+    .btn-primary { background: var(--primary); } .btn-success { background: var(--success); } .btn-danger { background: var(--danger); } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
     .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
     video { width: 100%; height: 100%; object-fit: cover; } 
     canvas { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
+    
+    .overlay-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
 
-    .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.95rem; text-shadow: 1px 1px 4px #000;}
+    .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.95rem; text-shadow: 1px 1px 4px #000; z-index: 20;}
 
     #feedbackList { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 15px; border: 1px solid #334155; }
     .fb-item { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #334155; }
@@ -68,24 +70,27 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA -->
+  <!-- PANEL 2: CÁMARA (Recorte automático + Overlay AR) -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Llene el marco verde con la hoja...</div>
+    <div class="info-text" id="infoScanText">Toque el video para enfocar. Llene el recuadro verde.</div>
     <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
-      <div class="guide-text">Recuadro de Captura OMR</div>
+      <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+      <div class="guide-text">TOCA PARA ENFOCAR 👇</div>
     </div>
     <button class="btn btn-success" onclick="capturarYEvaluar()">⏺️ CAPTURAR IMAGEN</button>
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3: REVISIÓN -->
+  <!-- PANEL 3: REVISIÓN DE IMAGEN Y DESCARGA -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ La lectura parece incompleta. Verifique la luz o retome la foto.</div>
-    <div class="info-text" style="color: #fbbf24;">Revise la lectura. Al confirmar se guardará en su celular.</div>
+    <div id="reviewWarning">⚠️ Lectura incompleta. Revisa la luz o si la hoja está muy chueca.</div>
+    <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
     
     <canvas id="canvasResult"></canvas>
+    
     <div id="feedbackList"></div>
+
     <div class="loader" id="loaderUpload">⏳ Guardando en Sheets y descargando foto...</div>
     
     <div id="reviewButtons">
@@ -98,48 +103,41 @@
     // ==========================================
     // ⚠️ REEMPLAZA ESTA URL CON TU WEB APP DE APPS SCRIPT
     // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwtx9nR03xcLrN9R_exXj4OCoMLGeULUUwAqCuS1OWURCEmmrNZXlMIYVsiZUswxd-x4Q/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEh-giAndwGOaARaZOUgszWyix697BpPPEv_yoH2fLc3DbyQgToPN5bFNcFmD4FclPMg/exec";
 
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
+    let overlayCanvas = document.getElementById('overlayCanvas'); let ctxOverlay = overlayCanvas.getContext('2d');
     let stream = null; let opencvReady = false; let finalBase64 = ""; let dataEvaluacion = {}; let finalFileName = "";
     
-    let userPin = ""; // Guarda el PIN temporalmente en memoria
+    let userPin = "";
+    let scanningInterval = null;
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
     function switchPanel(pid) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(pid).classList.add('active'); window.scrollTo(0,0); }
 
-    // ==========================================
-    // SISTEMA DE SEGURIDAD (LOGIN)
-    // ==========================================
-    window.onload = () => {
-      let savedPin = localStorage.getItem("omr_pin");
-      if(savedPin) { document.getElementById("inputPin").value = savedPin; }
-    };
+    window.onload = () => { let savedPin = localStorage.getItem("omr_pin"); if(savedPin) { document.getElementById("inputPin").value = savedPin; } };
 
     async function iniciarSesion() {
       let pin = document.getElementById("inputPin").value.trim();
       if (!pin) { alert("Por favor, ingrese un PIN"); return; }
       
-      document.getElementById("btnLogin").innerText = "⏳ Verificando con Google Sheets...";
-      document.getElementById("btnLogin").classList.add("btn-disabled");
+      document.getElementById("btnLogin").innerText = "⏳ Verificando con Google Sheets..."; document.getElementById("btnLogin").classList.add("btn-disabled");
 
       try {
-        // Enviar PIN a Apps Script por la URL (GET)
         let response = await fetch(SCRIPT_URL + "?pin=" + encodeURIComponent(pin)); 
         let data = await response.json();
         
         if (data.status === "error") {
-          alert(data.message); // Mostrará "PIN incorrecto"
+          alert(data.message);
           document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
           document.getElementById("btnLogin").classList.remove("btn-disabled");
           return;
         }
 
-        // Si el PIN es correcto, cargamos los datos
         userPin = pin;
-        localStorage.setItem("omr_pin", pin); // Guardamos para la próxima vez
+        localStorage.setItem("omr_pin", pin);
         
         dbExamenes = data.examenes; 
         dbEstudiantes = data.estudiantes;
@@ -160,18 +158,11 @@
     }
 
     function cerrarSesion() {
-      userPin = "";
-      localStorage.removeItem("omr_pin");
-      document.getElementById("inputPin").value = "";
-      document.getElementById("btnLogin").innerText = "Verificar e Ingresar";
-      document.getElementById("btnLogin").classList.remove("btn-disabled");
-      document.getElementById('selectionCard').style.display = 'none'; 
-      switchPanel('panel-login');
+      userPin = ""; localStorage.removeItem("omr_pin"); document.getElementById("inputPin").value = "";
+      document.getElementById("btnLogin").innerText = "Verificar e Ingresar"; document.getElementById("btnLogin").classList.remove("btn-disabled");
+      document.getElementById('selectionCard').style.display = 'none'; switchPanel('panel-login');
     }
 
-    // ==========================================
-    // INTERFAZ Y CÁMARA
-    // ==========================================
     function actualizarListaEstudiantes() {
       examenActual = dbExamenes.find(e => e.id === document.getElementById('selExamen').value);
       let selEst = document.getElementById('selEstudiante'); selEst.innerHTML = '<option value="">-- Seleccione estudiante --</option>';
@@ -182,41 +173,78 @@
       } else { document.getElementById('btnIniciarEscaneo').classList.replace('btn-primary', 'btn-disabled'); }
     }
 
+    video.addEventListener('click', async () => {
+      if (!stream) return;
+      const track = stream.getVideoTracks()[0];
+      const caps = track.getCapabilities();
+      if (caps.focusMode && caps.focusMode.includes("single-shot")) {
+          await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
+          showNotif("Enfocando...", "var(--primary)");
+      }
+    });
+
     async function abrirCamara() {
       estudianteActual = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('panel-camera'); document.getElementById('infoScanText').innerText = `Evaluando a: ${estudianteActual.nombre}`;
       
-      const constraints = { 
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } 
-      };
-
+      const constraints = { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } };
       try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; } 
       catch (err) { alert("Permita acceso a la cámara."); }
+      
+      scanningInterval = setInterval(processLiveAR, 300);
     }
 
-    function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
+    function detenerCamara() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } clearInterval(scanningInterval); }
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
-    function reintentarFoto() { switchPanel('panel-camera'); }
+    function reintentarFoto() { switchPanel('panel-camera'); scanningInterval = setInterval(processLiveAR, 300); }
 
-    // ==========================================
-    // PROCESAMIENTO OPENCV
-    // ==========================================
+    function processLiveAR() {
+      if (!opencvReady || !video.videoWidth) return;
+      overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
+      ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      ctxOverlay.drawImage(video, 0, 0, overlayCanvas.width, overlayCanvas.height);
+      
+      try {
+        let src = cv.imread(overlayCanvas);
+        let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        let thresh = new cv.Mat(); cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+
+        let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
+        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let squares = [];
+        for (let i = 0; i < contours.size(); ++i) {
+          let cnt = contours.get(i); let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt);
+          let extent = area / (r.width * r.height);
+          if (area > 150 && area < 5000 && extent > 0.7 && r.x > src.cols * 0.4) {
+            squares.push({ x: r.x + r.width/2, y: r.y + r.height/2 });
+          }
+        }
+        
+        ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (squares.length >= 4) {
+          squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
+          squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
+          
+          ctxOverlay.beginPath(); ctxOverlay.moveTo(tl.x, tl.y); ctxOverlay.lineTo(tr.x, tr.y); ctxOverlay.lineTo(br.x, br.y); ctxOverlay.lineTo(bl.x, bl.y); ctxOverlay.closePath();
+          ctxOverlay.lineWidth = 4; ctxOverlay.strokeStyle = "rgba(16, 185, 129, 0.8)"; ctxOverlay.stroke();
+        }
+        src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      } catch(e) {}
+    }
+
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      
+      clearInterval(scanningInterval); 
+
       const wrapper = document.getElementById('cameraWrapper');
       const wRatio = wrapper.clientWidth / wrapper.clientHeight;
       const vW = video.videoWidth; const vH = video.videoHeight;
       const vRatio = vW / vH;
       
       let cropW, cropH, cropX, cropY;
-      if (vRatio > wRatio) {
-          cropH = vH; cropW = vH * wRatio;
-          cropX = (vW - cropW) / 2; cropY = 0;
-      } else {
-          cropW = vW; cropH = vW / wRatio;
-          cropX = 0; cropY = (vH - cropH) / 2;
-      }
+      if (vRatio > wRatio) { cropH = vH; cropW = vH * wRatio; cropX = (vW - cropW) / 2; cropY = 0; } 
+      else { cropW = vW; cropH = vW / wRatio; cropX = 0; cropY = (vH - cropH) / 2; }
 
       canvas.width = cropW; canvas.height = cropH;
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
@@ -226,9 +254,9 @@
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
       let thresh = new cv.Mat();
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
-      let roiStartX = Math.floor(cropW * 0.60);
+      let roiStartX = Math.floor(cropW * 0.40);
       let roiWidth = cropW - roiStartX;
       let rect = new cv.Rect(roiStartX, 0, roiWidth, cropH);
       let roiThresh = thresh.roi(rect);
@@ -236,168 +264,119 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      let marcadores = [];
-      let burbujas = [];
-
+      let squares = [];
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
-        let r = cv.boundingRect(cnt);
-        let area = cv.contourArea(cnt);
-        let perimeter = cv.arcLength(cnt, true);
-        let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
-        let aspect = r.width / r.height;
-
-        if (area > 300 && area < 5000 && aspect > 0.8 && aspect < 1.2 && circularity < 0.85) {
-          marcadores.push(r);
-        } else if (area > 150 && area < 6000 && circularity > 0.75) {
-          burbujas.push(r);
-        }
-      }
-
-      let cantP = examenActual.cant_preguntas;
-      let opc = examenActual.opciones;
-      let reviewWarning = document.getElementById('reviewWarning');
-      
-      if (burbujas.length < (cantP * opc) / 2 && marcadores.length < 3) {
-        reviewWarning.style.display = 'block';
-      } else { reviewWarning.style.display = 'none'; }
-
-      let minX = 9999, minY = 9999, maxX = 0, maxY = 0, sumW = 0, sumH = 0;
-      burbujas.forEach(b => {
-        if(b.x < minX) minX = b.x; if(b.y < minY) minY = b.y;
-        if(b.x+b.width > maxX) maxX = b.x+b.width; if(b.y+b.height > maxY) maxY = b.y+b.height;
-        sumW += b.width; sumH += b.height;
-      });
-
-      let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
-      let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
-      let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
-      let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
-
-      let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
-      let feedbackHTML = `<div style="text-align:center; font-weight:bold; margin-bottom:8px; color:white;">RESUMEN DE EVALUACIÓN:</div>`;
-
-      for (let i = 0; i < cantP; i++) {
-        let yCenter = minY + (i * rowHeight) + (avgH / 2);
-        let maxP = 0; let idxM = -1;
-
-        for (let j = 0; j < opc; j++) {
-          let xCenter = minX + (j * colWidth) + (avgW / 2);
-          let scanW = avgW * 1.2; let scanH = avgH * 1.2;
-          let rx = Math.max(0, xCenter - scanW/2); let ry = Math.max(0, yCenter - scanH/2);
-          
-          let scanRect = new cv.Rect(rx, ry, scanW, scanH);
-          let roiB = roiThresh.roi(scanRect);
-          let p = cv.countNonZero(roiB);
-          roiB.delete();
-
-          if (p > maxP && p > (scanW * scanH * 0.15)) { maxP = p; idxM = j; }
-        }
-
-        let lResp = ["A", "B", "C", "D"]; 
-        let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; 
-        let lC = clave[i];
+        let r = cv.boundingRect(cnt); let area = cv.contourArea(cnt); let aspect = r.width / r.height;
+        let extent = area / (r.width * r.height);
         
-        let color = (lM === lC) ? "green" : "red";
-        if (lM === lC) { 
-          aciertos++; 
-          feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Preg. ${i+1}: Marcó ${lM} (Correcto)</div>`;
-        } else { 
-          incorrectasArray.push(i+1); 
-          feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Preg. ${i+1}: Marcó ${lM} (Era ${lC})</div>`;
-        }
-        detalleArray.push(`${i+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
-
-        if (idxM >= 0) {
-          let markX = roiStartX + minX + (idxM * colWidth) + (avgW / 2);
-          let markY = minY + (i * rowHeight) + (avgH / 2);
-          ctx.beginPath(); ctx.lineWidth=8; ctx.strokeStyle=color;
-          ctx.arc(markX, markY, avgW/2 + 10, 0, 2*Math.PI); ctx.stroke();
+        if (area > 150 && area < 6000 && aspect > 0.7 && aspect < 1.3 && extent > 0.7) {
+          squares.push({ x: r.x + r.width/2, y: r.y + r.height/2, rect: r });
         }
       }
 
-      document.getElementById('feedbackList').innerHTML = feedbackHTML;
-      let notaSobre100 = Math.round((aciertos / cantP) * 100);
+      let cantP = examenActual.cant_preguntas; let opc = examenActual.opciones;
+      let reviewWarning = document.getElementById('reviewWarning');
 
-      dataEvaluacion = {
-        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP,
-        nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
-        preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
-      };
+      if (squares.length < 4) {
+        reviewWarning.style.display = 'block';
+      } else { 
+        reviewWarning.style.display = 'none'; 
+        
+        squares.sort((a,b) => (a.x+a.y) - (b.x+b.y)); let tl = squares[0]; let br = squares[squares.length-1];
+        squares.sort((a,b) => (a.x-a.y) - (b.x-b.y)); let bl = squares[0]; let tr = squares[squares.length-1];
 
-      ctx.font = "bold 65px Arial";
-      let textoNota = `NOTA: ${notaSobre100}/100`;
-      let anchoTexto = ctx.measureText(textoNota).width;
-      let posX = canvas.width - anchoTexto - 30; 
-      let posY = 80; 
+        let targetW = opc * 50; let targetH = cantP * 50;
+        let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]);
+        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, targetW, 0, 0, targetH, targetW, targetH]);
+        let M = cv.getPerspectiveTransform(srcTri, dstTri);
+        
+        let warped = new cv.Mat(); let size = new cv.Size(targetW, targetH);
+        cv.warpPerspective(roiThresh, warped, M, size, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
-      ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY);
-      ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
+        let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
+        let feedbackHTML = `<div style="text-align:center; font-weight:bold; margin-bottom:8px; color:white;">DETALLE DE EVALUACIÓN:</div>`;
 
-      ctx.font = "bold 35px Arial"; 
-      let textoAciertos = `(${aciertos} aciertos)`;
-      let anchoSub = ctx.measureText(textoAciertos).width;
-      let posXSub = canvas.width - anchoSub - 30;
-      let posYSub = posY + 40;
+        for (let r = 0; r < cantP; r++) {
+          let maxP = 0; let idxM = -1;
+          for (let c = 0; c < opc; c++) {
+            let cx = c * 50 + 25; let cy = r * 50 + 25;
+            let cellRect = new cv.Rect(cx - 10, cy - 10, 20, 20); 
+            let roiC = warped.roi(cellRect);
+            let p = cv.countNonZero(roiC);
+            roiC.delete();
+            
+            if (p > maxP && p > (20 * 20 * 0.15)) { maxP = p; idxM = c; }
+          }
 
-      ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub);
-      ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
+          let lResp = ["A", "B", "C", "D"]; let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; let lC = clave[r];
+          let color = (lM === lC) ? "green" : "red";
+          if (lM === lC) { aciertos++; feedbackHTML += `<div class="fb-item" style="color:#10b981;">✔️ Preg. ${r+1}: Marcó ${lM}</div>`; } 
+          else { incorrectasArray.push(r+1); feedbackHTML += `<div class="fb-item" style="color:#ef4444;">❌ Preg. ${r+1}: Marcó ${lM} (Era ${lC})</div>`; }
+          detalleArray.push(`${r+1}:${lM}(${lM===lC?'OK':'❌'+lC})`);
+
+          if (idxM >= 0) {
+            let M_inv = cv.getPerspectiveTransform(dstTri, srcTri);
+            let cx = idxM * 50 + 25; let cy = r * 50 + 25;
+            let ptMat = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]); let outMat = new cv.Mat();
+            cv.perspectiveTransform(ptMat, outMat, M_inv);
+            let origX = roiStartX + outMat.data32F[0]; let origY = outMat.data32F[1];
+            
+            ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
+            ctx.arc(origX, origY, 20, 0, 2*Math.PI); ctx.stroke();
+            ptMat.delete(); outMat.delete(); M_inv.delete();
+          }
+        }
+        
+        document.getElementById('feedbackList').innerHTML = feedbackHTML;
+        let notaSobre100 = Math.round((aciertos / cantP) * 100);
+        dataEvaluacion = { aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP, nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "), preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna" };
+
+        // DIBUJAR NOTA EN ESQUINA SUPERIOR DERECHA
+        ctx.font = "bold 65px Arial"; let textoNota = `NOTA: ${notaSobre100}/100`; let anchoTexto = ctx.measureText(textoNota).width;
+        let posX = canvas.width - anchoTexto - 30; let posY = 80; 
+        ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY); ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
+
+        srcTri.delete(); dstTri.delete(); M.delete(); warped.delete();
+      }
 
       finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
       src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
 
-      // NOMBRAMIENTO DEL ARCHIVO PARA DESCARGA
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PRA"; else if(t.includes("REF")) tA="REF"; else if(t.includes("EVA")) tA="EVA"; else if(t.includes("CON")) tA="CON";
-      
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
-      
       finalFileName = `${examenActual.curso}-${tA}-${nomA}-${tA}-${ts}`;
     }
 
     function guardarImagenLocal(base64, filename) {
-        const link = document.createElement("a");
-        link.href = "data:image/jpeg;base64," + base64;
-        link.download = filename + ".jpg";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const link = document.createElement("a"); link.href = "data:image/jpeg;base64," + base64; link.download = filename + ".jpg";
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
     }
 
     async function enviarCalificacion() {
-      document.getElementById('reviewButtons').style.display = 'none';
-      document.getElementById('loaderUpload').style.display = 'block';
+      document.getElementById('reviewButtons').style.display = 'none'; document.getElementById('loaderUpload').style.display = 'block';
 
-      // ⚠️ ENVIAMOS EL PIN JUNTO CON LOS DATOS PARA VALIDAR
+      // ⚠️ AQUÍ ENVIAMOS fileName DENTRO DEL PAYLOAD HACIA GOOGLE SHEETS
       let payload = { 
-        pin: userPin,
-        idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
+        pin: userPin, idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
         nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
         aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
-        nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas,
-        preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas
+        nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas, preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas,
+        fileName: finalFileName // <--- Este es el nombre del archivo JPG
       };
 
       try {
-        let res = await fetch(SCRIPT_URL, { 
-          method: "POST", 
-          body: JSON.stringify(payload),
-          headers: { "Content-Type": "text/plain;charset=utf-8" }
-        }); 
-        
+        let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "text/plain;charset=utf-8" } }); 
         let result = await res.json();
-        
         if (result.status === "success") { 
-          guardarImagenLocal(finalBase64, finalFileName);
+          guardarImagenLocal(finalBase64, finalFileName); 
           showNotif("¡Nota enviada a Sheets y Foto descargada!"); 
           setTimeout(() => { volverAConfig(); }, 2500); 
         } 
         else throw new Error(result.message);
-      } catch (e) { 
-        alert(e.message); 
-        document.getElementById('reviewButtons').style.display = 'block'; 
-      } 
+      } catch (e) { alert("Error al subir a Sheets: " + e.message); document.getElementById('reviewButtons').style.display = 'block'; } 
       finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
