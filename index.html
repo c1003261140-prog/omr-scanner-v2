@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner Pro - Local Save</title>
+  <title>OMR Scanner Pro - Local Save & Crop</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
@@ -21,11 +21,14 @@
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); } .btn-success { background: var(--success); border: 2px solid #059669; } .btn-danger { background: var(--danger); border: 2px solid #b91c1c; } .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA CONTAIN (Vista completa sin recortes) */
-    .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
-    .camera-container::before { content: ""; display: block; padding-top: 133%; }
-    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+    /* CÁMARA CON RECORTE TAMAÑO CARTA (8.5 / 11) */
+    .camera-wrapper { position: relative; width: 100%; aspect-ratio: 8.5/11; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #10b981; box-sizing: border-box;}
+    video { width: 100%; height: 100%; object-fit: cover; } /* Se mostrará cortado a los bordes verdes */
+    
+    .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.95rem; text-shadow: 1px 1px 4px #000;}
 
+    /* LISTA DE REVISIÓN Y CANVAS */
+    #canvasResult { width: 100%; height: auto; border-radius: 10px; border: 2px solid #334155; margin-bottom: 15px;}
     #feedbackList { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 15px; border: 1px solid #334155; }
     .fb-item { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #334155; }
 
@@ -54,22 +57,23 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2 -->
+  <!-- PANEL 2: CÁMARA (Marco Fijo) -->
   <div id="panel-camera" class="panel">
-    <div class="info-text" id="infoScanText">Enfoque toda la hoja de respuestas...</div>
-    <div class="camera-container">
+    <div class="info-text" id="infoScanText">Llene todo el recuadro verde con la hoja...</div>
+    <div class="camera-wrapper" id="cameraWrapper">
       <video id="videoElement" autoplay playsinline></video>
+      <div class="guide-text">Recuadro de Captura OMR</div>
     </div>
     <button class="btn btn-success" onclick="capturarYEvaluar()">⏺️ CAPTURAR IMAGEN</button>
     <button class="btn btn-danger" onclick="volverAConfig()">❌ Cancelar</button>
   </div>
 
-  <!-- PANEL 3 -->
+  <!-- PANEL 3: REVISIÓN DE IMAGEN Y DESCARGA -->
   <div id="panel-review" class="panel">
-    <div id="reviewWarning">⚠️ La lectura parece incompleta. Verifique los cuadros negros o la luz.</div>
-    <div class="info-text" style="color: #fbbf24;">Revise la lectura. Al confirmar se guardará en su celular.</div>
+    <div id="reviewWarning">⚠️ La lectura parece incompleta. Verifique la luz o retome la foto.</div>
+    <div class="info-text" style="color: #fbbf24;">Revise la lectura antes de guardar.</div>
     
-    <div class="camera-container"><canvas id="canvasResult"></canvas></div>
+    <canvas id="canvasResult"></canvas>
     
     <div id="feedbackList"></div>
 
@@ -137,33 +141,59 @@
     function reintentarFoto() { switchPanel('panel-camera'); }
 
     // ==========================================
-    // MATRIZ MATEMÁTICA CON OPENCV
+    // ANÁLISIS DE MATRIZ CON CORTE EXACTO Y CRUCES
     // ==========================================
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor..."); return; }
-      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // 1. Matemáticas para recortar el video exactamente al marco verde (Object-fit cover)
+      const wrapper = document.getElementById('cameraWrapper');
+      const wRatio = wrapper.clientWidth / wrapper.clientHeight; // 8.5/11
+      const vW = video.videoWidth; const vH = video.videoHeight;
+      const vRatio = vW / vH;
+      
+      let cropW, cropH, cropX, cropY;
+      if (vRatio > wRatio) {
+          // El video es más ancho que el recuadro
+          cropH = vH;
+          cropW = vH * wRatio;
+          cropX = (vW - cropW) / 2;
+          cropY = 0;
+      } else {
+          // El video es más alto que el recuadro
+          cropW = vW;
+          cropH = vW / wRatio;
+          cropX = 0;
+          cropY = (vH - cropH) / 2;
+      }
+
+      canvas.width = cropW; canvas.height = cropH;
+      // Dibujamos al Canvas SOLAMENTE la parte que estaba dentro del recuadro verde
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
       switchPanel('panel-review');
 
+      // 2. Procesamiento OpenCV
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      // Threshold Adaptativo fuerte para matar luz de celular
       let thresh = new cv.Mat();
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
+      // Otsu ayuda mucho mejor al grafito de los lápices que Adaptive si hay buena luz uniforme
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
 
-      // Usar solo la mitad derecha de la foto (OMR)
-      let roiStartX = Math.floor(canvas.width * 0.40);
-      let roiWidth = canvas.width - roiStartX;
-      let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
+      // El OMR está en el 40% derecho
+      let roiStartX = Math.floor(cropW * 0.60);
+      let roiWidth = cropW - roiStartX;
+      let rect = new cv.Rect(roiStartX, 0, roiWidth, cropH);
       let roiThresh = thresh.roi(rect);
 
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Detectar 4 Marcadores Cuadrados y las Burbujas (Circulares)
-      let marcadores = [];
+      // Buscar Círculos (Burbujas)
       let burbujas = [];
+      let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
+      let sumW = 0, sumH = 0;
 
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
@@ -171,13 +201,13 @@
         let area = cv.contourArea(cnt);
         let perimeter = cv.arcLength(cnt, true);
         let circularity = (perimeter === 0) ? 0 : (4 * Math.PI * area) / (perimeter * perimeter);
-        let aspect = r.width / r.height;
-
-        if (area > 300 && area < 5000 && aspect > 0.8 && aspect < 1.2 && circularity < 0.85) {
-          marcadores.push(r);
-        }
-        else if (area > 150 && area < 6000 && circularity > 0.75) {
+        
+        // Círculos (Burbujas)
+        if (area > 150 && area < 6000 && circularity > 0.65) {
           burbujas.push(r);
+          if (r.x < minX) minX = r.x; if (r.y < minY) minY = r.y;
+          if (r.x + r.width > maxX) maxX = r.x + r.width; if (r.y + r.height > maxY) maxY = r.y + r.height;
+          sumW += r.width; sumH += r.height;
         }
       }
 
@@ -185,20 +215,10 @@
       let opc = examenActual.opciones;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      if (burbujas.length < (cantP * opc) / 2 && marcadores.length < 3) {
-        reviewWarning.style.display = 'block';
-      } else { reviewWarning.style.display = 'none'; }
-
-      let minX = 9999, minY = 9999, maxX = 0, maxY = 0, sumW = 0, sumH = 0;
-      burbujas.forEach(b => {
-        if(b.x < minX) minX = b.x; if(b.y < minY) minY = b.y;
-        if(b.x+b.width > maxX) maxX = b.x+b.width; if(b.y+b.height > maxY) maxY = b.y+b.height;
-        sumW += b.width; sumH += b.height;
-      });
+      if (burbujas.length < (cantP * opc) / 2) { reviewWarning.style.display = 'block'; } else { reviewWarning.style.display = 'none'; }
 
       let avgW = burbujas.length > 0 ? sumW / burbujas.length : 30;
       let avgH = burbujas.length > 0 ? sumH / burbujas.length : 30;
-
       let rowHeight = cantP > 1 ? (maxY - minY - avgH) / (cantP - 1) : 0;
       let colWidth = opc > 1 ? (maxX - minX - avgW) / (opc - 1) : 0;
 
@@ -219,7 +239,8 @@
           let p = cv.countNonZero(roiB);
           roiB.delete();
 
-          if (p > maxP && p > (scanW * scanH * 0.15)) { maxP = p; idxM = j; }
+          // Umbral muy sensible (12% del recuadro) para lápices claros
+          if (p > maxP && p > (scanW * scanH * 0.12)) { maxP = p; idxM = j; }
         }
 
         let lResp = ["A", "B", "C", "D"]; 
@@ -245,7 +266,6 @@
       }
 
       document.getElementById('feedbackList').innerHTML = feedbackHTML;
-
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
 
       dataEvaluacion = {
@@ -254,7 +274,7 @@
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // DIBUJAR NOTA PEQUEÑA (65px) EN LA ESQUINA SUPERIOR DERECHA
+      // DIBUJAR NOTA PEQUEÑA EN ESQUINA SUPERIOR DERECHA
       ctx.font = "bold 65px Arial";
       let textoNota = `NOTA: ${notaSobre100}/100`;
       let anchoTexto = ctx.measureText(textoNota).width;
@@ -264,11 +284,11 @@
       ctx.fillStyle = "red"; ctx.fillText(textoNota, posX, posY);
       ctx.lineWidth = 3; ctx.strokeStyle = "white"; ctx.strokeText(textoNota, posX, posY);
 
-      ctx.font = "bold 40px Arial"; 
+      ctx.font = "bold 35px Arial"; 
       let textoAciertos = `(${aciertos} aciertos)`;
       let anchoSub = ctx.measureText(textoAciertos).width;
       let posXSub = canvas.width - anchoSub - 30;
-      let posYSub = posY + 50;
+      let posYSub = posY + 40;
 
       ctx.fillStyle = "#38bdf8"; ctx.fillText(textoAciertos, posXSub, posYSub);
       ctx.lineWidth = 2; ctx.strokeStyle = "black"; ctx.strokeText(textoAciertos, posXSub, posYSub);
@@ -287,7 +307,7 @@
     }
 
     // ==========================================
-    // GUARDAR EN SHEETS Y DESCARGAR FOTO LOCAL
+    // GUARDAR EN SHEETS Y DESCARGAR FOTO LOCAL (NO ENVIAR BASE64)
     // ==========================================
     function guardarImagenLocal(base64, filename) {
         const link = document.createElement("a");
@@ -302,6 +322,7 @@
       document.getElementById('reviewButtons').style.display = 'none';
       document.getElementById('loaderUpload').style.display = 'block';
 
+      // ⚠️ ELIMINAMOS IMAGEBASE64 DEL PAYLOAD PARA NO SATURAR A GOOGLE
       let payload = { 
         idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
         nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
@@ -313,7 +334,6 @@
       try {
         let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) }); let result = await res.json();
         if (result.status === "success") { 
-          // DESCARGAR FOTO A LA GALERÍA DEL CELULAR
           guardarImagenLocal(finalBase64, finalFileName);
           showNotif("¡Nota guardada y Foto descargada!"); 
           setTimeout(() => { volverAConfig(); }, 2500); 
