@@ -7,7 +7,6 @@
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; --success: #10b981; --danger: #ef4444; }
-    /* SOLUCIÓN AL SCROLL MÓVIL: Se quitó overflow hidden y alturas absolutas */
     body { margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
     
     header { background: #020617; padding: 15px; text-align: center; font-weight: bold; font-size: 1.2rem; box-shadow: 0 2px 10px rgba(0,0,0,0.5); position: sticky; top: 0; z-index: 50;}
@@ -19,7 +18,6 @@
     .card label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;}
     .card select { width: 100%; padding: 12px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px; font-size: 1rem; margin-bottom: 10px; outline: none; }
     
-    /* BOTONES ACCESIBLES Y GRANDES */
     .btn { padding: 16px; border: none; border-radius: 8px; font-size: 1.05rem; font-weight: bold; color: white; cursor: pointer; text-align: center; width: 100%; display: block; margin-bottom: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .btn:active { transform: scale(0.96); }
     .btn-primary { background: var(--primary); }
@@ -27,20 +25,24 @@
     .btn-danger { background: var(--danger); border: 2px solid #b91c1c; }
     .btn-disabled { background: #475569; color: #94a3b8; pointer-events: none; }
 
-    /* CÁMARA PROPORCIONAL Y RESPONSIVA */
-    .camera-container { position: relative; width: 100%; aspect-ratio: 3 / 4; max-height: 65vh; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    /* CÁMARA CONTAIN (Para evitar recortes) */
+    .camera-container { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;}
     
-    /* MÁSCARA QUE OSCURECE AFUERA Y DEJA RECTÁNGULO CARTA */
+    /* El aspect ratio asegura que el contenedor sea vertical */
+    .camera-container::before { content: ""; display: block; padding-top: 133%; /* 4:3 aprox */ }
+    
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+    
+    /* MÁSCARA QUE SE CENTRA EN LA COLUMNA DE RESPUESTAS */
     .guide-paper {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      width: 90%; max-width: 400px; aspect-ratio: 8.5 / 11;
-      border: 3px solid rgba(255,255,255,0.8);
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.65);
+      position: absolute; right: 5%; top: 50%; transform: translateY(-50%);
+      width: 35%; /* Ancho de la columna OMR en la hoja */
+      height: 80%;
+      border: 3px solid #38bdf8;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); /* Oscurece todo el resto */
       box-sizing: border-box; pointer-events: none;
     }
-    .guide-text { position: absolute; top: 10px; width: 100%; text-align: center; color: white; font-weight: bold; text-shadow: 1px 1px 4px #000; font-size: 0.9rem;}
-    .guide-omr-zone { position: absolute; right: 0; top: 15%; width: 35%; height: 75%; border: 2px dashed #38bdf8; background: rgba(56, 189, 248, 0.15); }
+    .guide-text { position: absolute; top: -30px; width: 100%; text-align: center; color: white; font-weight: bold; font-size: 0.9rem; text-shadow: 1px 1px 4px #000;}
 
     .loader { text-align: center; padding: 20px; color: #38bdf8; font-weight: bold; display: none; }
     #notif { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--success); padding: 12px 25px; border-radius: 30px; font-weight: bold; display: none; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.6);}
@@ -72,15 +74,14 @@
     <button class="btn btn-disabled" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Iniciar Escáner</button>
   </div>
 
-  <!-- PANEL 2: CÁMARA (ENCUADRE TAMAÑO CARTA) -->
+  <!-- PANEL 2: CÁMARA -->
   <div id="panel-camera" class="panel">
     <div class="info-text" id="infoScanText">Cargando cámara...</div>
     
     <div class="camera-container">
       <video id="videoElement" autoplay playsinline></video>
       <div class="guide-paper">
-        <div class="guide-text">Alinee la hoja en este marco</div>
-        <div class="guide-omr-zone"></div>
+        <div class="guide-text">Encuadre OMR Aquí 👇</div>
       </div>
     </div>
 
@@ -114,10 +115,7 @@
     let dbExamenes = []; let dbEstudiantes = []; let examenActual = null; let estudianteActual = null;
     let video = document.getElementById('videoElement'); let canvas = document.getElementById('canvasResult'); let ctx = canvas.getContext('2d');
     let stream = null; let opencvReady = false;
-    
-    // Almacenamiento de variables para enviar
-    let finalBase64 = "";
-    let dataEvaluacion = {};
+    let finalBase64 = ""; let dataEvaluacion = {};
 
     function onOpenCvReady() { opencvReady = true; console.log("OpenCV Listo"); }
     function showNotif(msg, bg="var(--success)") { let n = document.getElementById('notif'); n.innerText=msg; n.style.background=bg; n.style.display='block'; setTimeout(()=>n.style.display='none',3500); }
@@ -173,11 +171,11 @@
     function volverAConfig() { detenerCamara(); switchPanel('panel-config'); }
     function reintentarFoto() { switchPanel('panel-camera'); }
 
-    // PROCESAMIENTO OPENCV ADAPTATIVO
+    // PROCESAMIENTO OPENCV
     function capturarYEvaluar() {
       if (!opencvReady) { alert("Cargando motor visual. Espere un momento."); return; }
       
-      // Congelar imagen del video al canvas
+      // Dibujar imagen exacta de la cámara
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       switchPanel('panel-review');
@@ -185,12 +183,12 @@
       let src = cv.imread(canvas);
       let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-      // ADAPTIVE THRESHOLD (Perfecto para sombras y mala luz)
+      // ADAPTIVE THRESHOLD (Mitiga sombras de cámaras gama baja)
       let thresh = new cv.Mat();
       cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 5);
 
-      // Recortar zona derecha (donde están las burbujas OMR)
-      let roiStartX = Math.floor(canvas.width * 0.65);
+      // Analizar solo el 40% derecho (Donde el profe encuadra la zona OMR)
+      let roiStartX = Math.floor(canvas.width * 0.60);
       let roiWidth = canvas.width - roiStartX;
       let rect = new cv.Rect(roiStartX, 0, roiWidth, canvas.height);
       let roiThresh = thresh.roi(rect);
@@ -198,17 +196,17 @@
       let contours = new cv.MatVector(); let hierarchy = new cv.Mat();
       cv.findContours(roiThresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      // Detectar burbujas
+      // Extraer burbujas y filtrar fiduciales negros
       let burbujas = [];
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
         let r = cv.boundingRect(cnt);
         let area = cv.contourArea(cnt);
         let aspect = r.width / r.height;
-        if (area > 80 && area < 4000 && aspect > 0.6 && aspect < 1.4) burbujas.push(r);
+        // Filtramos para evitar cuadrados negros (fiduciales) muy grandes
+        if (area > 50 && area < 2500 && aspect > 0.6 && aspect < 1.4) burbujas.push(r);
       }
 
-      // Ordenar geométricamente por filas
       burbujas.sort((a, b) => a.y - b.y);
       let filas = []; let filaActual = [];
       let yRef = burbujas.length > 0 ? burbujas[0].y : 0;
@@ -222,32 +220,28 @@
       }
       if (filaActual.length > 0) { filaActual.sort((a, b) => a.x - b.x); filas.push(filaActual); }
 
-      // VALIDACIÓN DE SEGURIDAD OMR
+      // Filtrar filas inválidas (elimina la fila de fiduciales que tiene solo 2)
+      let filasLimpias = filas.filter(f => f.length >= 3 && f.length <= 5);
+
+      // VALIDACIÓN
       let cantP = examenActual.cant_preguntas;
       let reviewWarning = document.getElementById('reviewWarning');
       
-      if (filas.length < cantP) {
-        reviewWarning.innerText = `⚠️ ADVERTENCIA: El examen exige ${cantP} filas de respuestas, pero solo se detectaron ${filas.length}. Ilumine bien la hoja, acérquese un poco y reintente.`;
+      if (filasLimpias.length < cantP) {
+        reviewWarning.innerText = `⚠️ ADVERTENCIA: El examen exige ${cantP} preguntas, pero detecté ${filasLimpias.length}. Si hay error, retome la foto.`;
         reviewWarning.style.display = 'block';
-      } else {
-        reviewWarning.style.display = 'none';
-      }
+      } else { reviewWarning.style.display = 'none'; }
 
-      // EXTRACCIÓN DE DATOS DE CALIFICACIÓN
-      let aciertos = 0; 
-      let clave = examenActual.clave;
-      let detalleArray = [];
-      let incorrectasArray = [];
+      let aciertos = 0; let clave = examenActual.clave; let detalleArray = []; let incorrectasArray = [];
 
-      for (let i = 0; i < Math.min(filas.length, cantP); i++) {
-        let f = filas[i]; let idxM = -1; let maxP = 0;
+      for (let i = 0; i < Math.min(filasLimpias.length, cantP); i++) {
+        let f = filasLimpias[i]; let idxM = -1; let maxP = 0;
 
         for (let j = 0; j < Math.min(f.length, examenActual.opciones); j++) {
           let b = f[j]; let bRect = new cv.Rect(b.x, b.y, b.width, b.height);
           let roiB = roiThresh.roi(bRect);
           let p = cv.countNonZero(roiB);
           roiB.delete();
-          // Detectar relleno si supera el 30% del área del cuadro
           if (p > maxP && p > (b.width * b.height * 0.30)) { maxP = p; idxM = j; }
         }
 
@@ -255,19 +249,10 @@
         let lM = idxM >= 0 ? lResp[idxM] : "BLANCO"; 
         let lC = clave[i];
         
-        // Evaluar correcta/incorrecta
         let color;
-        if (lM === lC) {
-          color = "green";
-          aciertos++;
-          detalleArray.push(`${i+1}:${lM}(OK)`);
-        } else {
-          color = "red";
-          incorrectasArray.push(i+1);
-          detalleArray.push(`${i+1}:${lM}(❌${lC})`);
-        }
+        if (lM === lC) { color = "green"; aciertos++; detalleArray.push(`${i+1}:${lM}(OK)`); } 
+        else { color = "red"; incorrectasArray.push(i+1); detalleArray.push(`${i+1}:${lM}(❌${lC})`); }
 
-        // Dibujar el contorno validado sobre la foto
         if (idxM >= 0 && idxM < f.length) {
           let b = f[idxM];
           ctx.beginPath(); ctx.lineWidth=6; ctx.strokeStyle=color;
@@ -275,36 +260,24 @@
         }
       }
 
-      // Calcular Nota sobre 100
       let notaSobre100 = Math.round((aciertos / cantP) * 100);
 
-      // Guardar el registro consolidado
       dataEvaluacion = {
-        aciertos: aciertos,
-        fallos: cantP - aciertos,
-        totalPreguntas: cantP,
-        nota100: notaSobre100,
-        detalleRespuestas: detalleArray.join(", "),
+        aciertos: aciertos, fallos: cantP - aciertos, totalPreguntas: cantP,
+        nota100: notaSobre100, detalleRespuestas: detalleArray.join(", "),
         preguntasIncorrectas: incorrectasArray.length > 0 ? incorrectasArray.join(", ") : "Ninguna"
       };
 
-      // Escribir NOTA SOBRE 100 GIGANTE en la imagen para validación visual
-      ctx.font = "bold 90px Arial"; ctx.fillStyle = "red"; 
-      ctx.fillText(`NOTA: ${notaSobre100}/100`, 50, 120);
-      ctx.lineWidth = 4; ctx.strokeStyle = "white"; 
-      ctx.strokeText(`NOTA: ${notaSobre100}/100`, 50, 120);
-      
-      // Dibujar resumen aciertos debajo
-      ctx.font = "bold 60px Arial"; ctx.fillStyle = "#38bdf8"; 
-      ctx.fillText(`(${aciertos} de ${cantP} Correctas)`, 50, 210);
-      ctx.lineWidth = 3; ctx.strokeStyle = "black"; 
-      ctx.strokeText(`(${aciertos} de ${cantP} Correctas)`, 50, 210);
+      // Dibujar en imagen
+      ctx.font = "bold 90px Arial"; ctx.fillStyle = "red"; ctx.fillText(`NOTA: ${notaSobre100}/100`, 50, 120);
+      ctx.lineWidth = 4; ctx.strokeStyle = "white"; ctx.strokeText(`NOTA: ${notaSobre100}/100`, 50, 120);
+      ctx.font = "bold 60px Arial"; ctx.fillStyle = "#38bdf8"; ctx.fillText(`(${aciertos} correctas de ${cantP})`, 50, 210);
+      ctx.lineWidth = 3; ctx.strokeStyle = "black"; ctx.strokeText(`(${aciertos} correctas de ${cantP})`, 50, 210);
 
       finalBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
       src.delete(); gray.delete(); thresh.delete(); roiThresh.delete(); contours.delete(); hierarchy.delete();
     }
 
-    // ENVIAR DATOS COMPLETOS A SHEETS
     async function enviarCalificacion() {
       document.getElementById('reviewButtons').style.display = 'none';
       document.getElementById('loaderUpload').style.display = 'block';
@@ -312,48 +285,25 @@
       let nomA = estudianteActual.nombre.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
       let t = examenActual.tipo.toUpperCase(); let tA="OT";
       if(t.includes("REP")) tA="REP"; else if(t.includes("PRÁC")) tA="PR"; else if(t.includes("REF")) tA="RE"; else if(t.includes("EVA")) tA="EV"; else if(t.includes("CON")) tA="CON";
-      
       let d = new Date(); let ts = String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getMonth()+1).padStart(2,'0')+String(d.getFullYear()).slice(-2);
-      
-      // Nombre Archivo
       let fName = `${examenActual.curso}-${tA}-${nomA}-${ts}`;
 
-      // Empaquetar TODOS los datos
       let payload = { 
-        idExamen: examenActual.id,
-        curso: examenActual.curso, 
-        tipo: examenActual.tipo,
-        trimestre: examenActual.trimestre,
-        nLista: estudianteActual.n_lista, 
-        nombre: estudianteActual.nombre, 
-        
-        aciertos: dataEvaluacion.aciertos,
-        fallos: dataEvaluacion.fallos,
-        totalPreguntas: dataEvaluacion.totalPreguntas,
-        nota100: dataEvaluacion.nota100,
-        detalleRespuestas: dataEvaluacion.detalleRespuestas,
-        preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas,
-        
-        imageBase64: finalBase64, 
-        fileName: fName 
+        idExamen: examenActual.id, curso: examenActual.curso, tipo: examenActual.tipo, trimestre: examenActual.trimestre,
+        nLista: estudianteActual.n_lista, nombre: estudianteActual.nombre, 
+        aciertos: dataEvaluacion.aciertos, fallos: dataEvaluacion.fallos, totalPreguntas: dataEvaluacion.totalPreguntas,
+        nota100: dataEvaluacion.nota100, detalleRespuestas: dataEvaluacion.detalleRespuestas,
+        preguntasIncorrectas: dataEvaluacion.preguntasIncorrectas, imageBase64: finalBase64, fileName: fName 
       };
 
       try {
         let res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) });
         let result = await res.json();
         
-        if (result.status === "success") { 
-          showNotif("¡Examen Guardado con Éxito!"); 
-          setTimeout(() => { volverAConfig(); }, 2500); 
-        } else {
-          throw new Error(result.message);
-        }
-      } catch (e) { 
-        alert("Error de conexión al guardar: " + e); 
-        document.getElementById('reviewButtons').style.display = 'block'; 
-      } finally { 
-        document.getElementById('loaderUpload').style.display = 'none'; 
-      }
+        if (result.status === "success") { showNotif("¡Examen Guardado con Éxito!"); setTimeout(() => { volverAConfig(); }, 2500); } 
+        else throw new Error(result.message);
+      } catch (e) { alert("Error de conexión al guardar: " + e); document.getElementById('reviewButtons').style.display = 'block'; } 
+      finally { document.getElementById('loaderUpload').style.display = 'none'; }
     }
   </script>
 </body>
