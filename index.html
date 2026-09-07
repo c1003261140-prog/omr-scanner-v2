@@ -114,7 +114,7 @@
       <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
     </div>
     
-    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar👇</div>
+    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar la imagen👇</div>
     <div class="visor-final">
       <canvas id="canvasFinal"></canvas>
     </div>
@@ -459,15 +459,15 @@
         }
       });
 
-      // SELLO DINÁMICO (Estrecho, empujado a la derecha, muy abajo)
+      // SELLO DINÁMICO (Más angosto, muy a la derecha, muy abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
       let stampW = 280; 
       let stampH = 100 + (rubricTxt.length * 15);
       
-      let stampX = canvasF.width - stampW - 20; 
-      let stampY = matrixBottomY + 160; 
+      let stampX = canvasF.width - stampW - 20; // Alineado totalmente a la derecha
+      let stampY = matrixBottomY + 160; // 10 veces más abajo que antes
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -500,12 +500,13 @@
       
       // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
+      let f = curExamen.fila.includes("A") ? "FA" : "FB";
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${tema4}-${initials}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-${f}-${t3}-${tema4}-${initials}-${ms}${fechaStr}`;
     }
 
     function descargarImg() {
