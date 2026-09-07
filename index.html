@@ -27,9 +27,16 @@
     #bwCanvas { width: 100%; height: 100%; object-fit: contain; }
     
     .visor-final { width: 100%; height: auto; min-height: 400px; border: 3px solid #10b981; background: #000; margin-bottom: 15px; position: relative; border-radius: 8px; text-align:center;}
-    #canvasFinal { display: none; }
-    #imgFinalDescarga { width: 100%; height: auto; object-fit: contain; display: none; max-height: 65vh; }
+    #canvasFinal { display: block; width: 100%; height: auto; object-fit: contain;}
     
+    #manualEditor { background: #1e293b; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #10b981; }
+    .editor-title { font-size: 0.95rem; font-weight: bold; color: #f8fafc; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #334155; padding-bottom: 5px; }
+    #editorFilas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .edit-row { display: flex; flex-direction: column; align-items: center; padding: 6px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;}
+    .edit-row span { font-size: 0.8rem; font-weight: bold; margin-bottom: 4px; text-align: center;}
+    .edit-row select { width: 100%; padding: 6px; background: #1e293b; color: white; border: 1px solid #3b82f6; border-radius: 4px; font-weight: bold; font-size: 0.9rem; text-align: center; outline: none; }
+    .c-ok { color: #10b981; } .c-err { color: #ef4444; }
+
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
   </style>
@@ -71,9 +78,11 @@
     <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
   </div>
 
-  <!-- PANEL 3: RESULTADOS -->
+  <!-- PANEL 3: RESULTADOS Y EDICIÓN MANUAL -->
   <div id="p-resultado" class="panel">
     <div class="filter-panel">
+      <div class="filter-row"><label>Brillo</label><input type="range" id="slBrillo" min="-100" max="100" value="-25" oninput="aplicarFiltrosBinarizacion()"><span id="valBrillo">-25</span></div>
+      <div class="filter-row"><label>Contraste</label><input type="range" id="slContraste" min="10" max="40" value="24" oninput="aplicarFiltrosBinarizacion()"><span id="valContraste">2.4</span></div>
       <div class="filter-row"><label>Lápiz</label><input type="range" id="slUmbral" min="100" max="250" value="168" oninput="aplicarFiltrosBinarizacion()"><span id="valUmbral">168</span></div>
       <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
     </div>
@@ -81,7 +90,12 @@
     <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar👇</div>
     <div class="visor-final">
       <canvas id="canvasFinal"></canvas>
-      <img id="imgFinalDescarga" alt="Examen Evaluado">
+    </div>
+
+    <!-- REVISIÓN MANUAL -->
+    <div id="manualEditor">
+      <div class="editor-title">✏️ REVISIÓN MANUAL</div>
+      <div id="editorFilas"></div>
     </div>
     
     <div id="reviewButtons">
@@ -101,6 +115,7 @@
     let examenes = [], alumnos = [], curExamen = null, curAlumno = null;
     let rawImg = null, mesaImg = null, finalBase64 = "", finalName = "", resData = {};
     let video = document.getElementById('video');
+    let arregloRespuestasManuales = [];
     
     let cvsMesa = document.getElementById('canvasMesa'), ctxMesa = cvsMesa.getContext('2d');
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
@@ -108,6 +123,7 @@
     
     let lineTop = 0, lineBot = 0, activeLine = null;
     let corners = []; let opencvReady = false;
+    let activeHandle = null; let dragOffset = {x:0, y:0};
     
     function onOpenCvReady() { opencvReady = true; }
     function switchPanel(id) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0);}
@@ -215,11 +231,28 @@
       corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
-    cvsCrop.addEventListener('touchmove', e => {
-      let rect = cvsCrop.getBoundingClientRect(); let x = e.touches[0].clientX - rect.left; let y = e.touches[0].clientY - rect.top;
-      let closest = corners.reduce((prev, curr, idx) => { let d = Math.hypot(curr.x-x, curr.y-y); return d < prev.d ? {idx:idx, d:d} : prev; }, {idx:-1, d:1000});
-      if(closest.d < 60) { corners[closest.idx] = {x,y}; drawCrop(); }
+    // --- RECUADRO AZUL ARRASTRABLE COMPLETO ---
+    function getTouchPos(e) { let rect = cvsCrop.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
+    function distToSegment(p, v, w) { let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2); if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y); let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y))); }
+    function pointInPolygon(point, vs) { let x = point.x, y = point.y; let inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside; }
+
+    cvsCrop.addEventListener('pointerdown', (e) => {
+      let pos = getTouchPos(e); activeHandle = null;
+      for (let i=0; i<4; i++) { if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 40) { activeHandle = i; return; } }
+      if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
+      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 40) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
     });
+
+    cvsCrop.addEventListener('pointermove', (e) => {
+      if (activeHandle === null) return;
+      let pos = getTouchPos(e); let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
+      if (typeof activeHandle === 'number') { corners[activeHandle].x = Math.max(0, Math.min(cvsCrop.width, pos.x)); corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); } 
+      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
+      else if (activeHandle.startsWith("edge_")) { let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; dragOffset = pos; }
+      drawCrop();
+    });
+    window.addEventListener('pointerup', () => { activeHandle = null; });
+
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
         var words = text.split(' '); var line = '';
@@ -247,22 +280,25 @@
       warpedMatBase = new cv.Mat();
       cv.warpPerspective(src, warpedMatBase, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
 
-      document.getElementById('imgFinalDescarga').style.display = 'none';
       src.delete(); srcTri.delete(); dstTri.delete();
-
       aplicarFiltrosBinarizacion();
     }
 
     function aplicarFiltrosBinarizacion() {
+      let valB = parseInt(document.getElementById('slBrillo').value); 
+      let valC = parseInt(document.getElementById('slContraste').value) / 10; 
       let valU = parseInt(document.getElementById('slUmbral').value);
+      
+      document.getElementById('valBrillo').innerText = valB; 
+      document.getElementById('valContraste').innerText = valC.toFixed(1); 
       document.getElementById('valUmbral').innerText = valU;
 
       let gray = new cv.Mat(); cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY);
-      let bin = new cv.Mat(); cv.threshold(gray, bin, valU, 255, cv.THRESH_BINARY_INV);
+      let adjusted = new cv.Mat(); gray.convertTo(adjusted, -1, valC, valB);
+      let bin = new cv.Mat(); cv.threshold(adjusted, bin, valU, 255, cv.THRESH_BINARY_INV);
       cv.imshow('bwCanvas', bin);
 
-      let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = []; let detTxt = []; let incTxt = [];
-      
+      arregloRespuestasManuales = [];
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
@@ -270,8 +306,28 @@
           let pts = cv.countNonZero(roi); roi.delete();
           if(pts > maxP && pts > 5) { maxP = pts; mIdx = c; }
         }
-        let ans = mIdx>=0 ? ["A","B","C","D"][mIdx] : "X";
+        let ans = mIdx>=0 ? ["A","B","C","D"][mIdx] : "BLANCO";
+        arregloRespuestasManuales.push(ans);
+      }
+
+      gray.delete(); adjusted.delete(); bin.delete();
+      renderizarResultadosYEditor();
+    }
+
+    function actualizarRespuestaManual(idx, valor) { 
+        arregloRespuestasManuales[idx] = valor; 
+        renderizarResultadosYEditor(); 
+    }
+
+    function renderizarResultadosYEditor() {
+      let aciertos = 0; let fallos = 0; let rubricTxt = []; let detTxt = []; let incTxt = []; let htmlEditor = "";
+      
+      let arrAns = [];
+
+      for(let r=0; r<curExamen.cant_preguntas; r++) {
+        let ans = arregloRespuestasManuales[r];
         let esOk = ans === curExamen.clave[r];
+        
         if(esOk) { 
           aciertos++; 
           let rbAc = (curExamen.rubA && curExamen.rubA[r]) ? curExamen.rubA[r] : "Correcto";
@@ -282,9 +338,18 @@
           let rbFl = (curExamen.rubF && curExamen.rubF[r]) ? curExamen.rubF[r] : "Revisar";
           rubricTxt.push(`❌ P${r+1}: ${rbFl}`); 
         }
+        
         detTxt.push(`${r+1}:${ans}(${esOk?'OK':'❌'+curExamen.clave[r]})`);
-        arrAns.push({idx: mIdx, ok: esOk});
+        arrAns.push({idx: ["A","B","C","D"].indexOf(ans), ok: esOk});
+
+        // Generar UI Manual Editor
+        let opts = ["A", "B", "C", "D"].slice(0, curExamen.opciones); opts.push("BLANCO");
+        let optString = opts.map(o => `<option value="${o}" ${o===ans?'selected':''}>${o}</option>`).join("");
+        let classColor = esOk ? 'c-ok' : 'c-err';
+        htmlEditor += `<div class="edit-row"><span class="${classColor}">P${r+1}. (Resp: ${curExamen.clave[r]})</span><select onchange="actualizarRespuestaManual(${r}, this.value)">${optString}</select></div>`;
       }
+
+      document.getElementById('editorFilas').innerHTML = htmlEditor;
 
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
@@ -315,8 +380,9 @@
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
       let stampW = 380; 
-      let stampH = 100 + (rubricTxt.length * 18);
-      let stampX = matrixRightX - stampW;
+      let stampH = 100 + (rubricTxt.length * 16);
+      let stampX = matrixRightX - stampW + 60; // Push to the right
+      if (stampX + stampW > canvasF.width - 20) stampX = canvasF.width - stampW - 20; // Bound to screen
       let stampY = matrixBottomY + 40; 
       
       if(stampX < 20) stampX = 20;
@@ -326,37 +392,34 @@
       ctxF.fillRect(stampX, stampY, stampW, stampH);
       ctxF.lineWidth = 3; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
-      ctxF.fillStyle = "black"; ctxF.font = "bold 20px Arial";
-      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 15, stampY + 30);
+      ctxF.fillStyle = "black"; ctxF.font = "bold 16px Arial";
+      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 15, stampY + 25);
+      ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 15, stampY + 45);
       
-      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 26px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 15, stampY + 60);
+      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 22px Arial";
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 15, stampY + 75);
       
       ctxF.fillStyle = "black"; ctxF.font = "14px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 180, stampY + 60);
+      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 180, stampY + 75);
 
-      let rubY = stampY + 90;
+      let rubY = stampY + 100;
       ctxF.font = "12px Arial";
       rubricTxt.forEach((rt) => {
         ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
-        rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 18) + 2;
+        rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 16) + 2;
       });
 
-      gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
+      mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-F[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
-      let f = curExamen.fila || "A";
+      // FORMATEO ESTRICTO DEL ARCHIVO
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-F${f}-${tema4}-${t3}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
-      let imgTag = document.getElementById('imgFinalDescarga');
-      imgTag.src = finalBase64;
-      imgTag.style.display = "block";
     }
 
     function descargarImg() {
