@@ -310,7 +310,7 @@
         }
       });
 
-      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ)
+      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ, A LA DERECHA)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
@@ -344,7 +344,7 @@
 
       gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
+      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-F[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
       let f = curExamen.fila || "A";
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
