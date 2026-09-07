@@ -306,17 +306,24 @@
       corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
+    // --- RECUADRO AZUL ARRASTRABLE COMPLETO Y LUPA DE PRECISIÓN ---
     function getTouchPos(e) { let rect = cvsCrop.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
     function distToSegment(p, v, w) { let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2); if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y); let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y))); }
     function pointInPolygon(point, vs) { let x = point.x, y = point.y; let inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside; }
 
     function updateLoupe(cx, cy) {
       if (loupeCanvas.style.display === 'none') return;
-      loupeCanvas.style.left = (cx - 60) + 'px'; loupeCanvas.style.top = (cy - 140) + 'px'; 
-      loupeCtx.clearRect(0, 0, 120, 120); loupeCtx.save();
+      loupeCanvas.style.left = (cx - 60) + 'px';
+      loupeCanvas.style.top = (cy - 140) + 'px'; 
+      
+      loupeCtx.clearRect(0, 0, 120, 120);
+      loupeCtx.save();
       loupeCtx.beginPath(); loupeCtx.arc(60, 60, 60, 0, Math.PI*2); loupeCtx.clip();
+      
       let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
-      let srcW = 60 * sX; let srcH = 60 * sY; let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
+      let srcW = 60 * sX; let srcH = 60 * sY;
+      let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
+      
       loupeCtx.drawImage(mesaImg, srcX, srcY, srcW, srcH, 0, 0, 120, 120);
       loupeCtx.strokeStyle = 'red'; loupeCtx.lineWidth = 2;
       loupeCtx.beginPath(); loupeCtx.moveTo(60, 40); loupeCtx.lineTo(60, 80); loupeCtx.stroke();
@@ -326,6 +333,7 @@
 
     cvsCrop.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e); activeHandle = null;
+      // 1. Detectar Esquinas (Activa Lupa)
       for (let i=0; i<4; i++) { 
           if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 60) { 
               activeHandle = i; 
@@ -333,7 +341,14 @@
               return; 
           } 
       }
-      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 80) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
+      // 2. Detectar Bordes Laterales (Más anchos para arrastrar mejor)
+      for (let i=0; i<4; i++) { 
+          let j = (i + 1) % 4; 
+          if (distToSegment(pos, corners[i], corners[j]) < 80) { 
+              activeHandle = `edge_${i}`; dragOffset = pos; return; 
+          } 
+      }
+      // 3. Detectar Centro (Mueve todo el cuadro)
       if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
     });
 
@@ -346,7 +361,10 @@
           corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); 
           if (loupeCanvas.style.display === 'block') updateLoupe(pos.x, pos.y);
       } 
-      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
+      else if (activeHandle === "center") { 
+          corners.forEach(c => { c.x += dx; c.y += dy; }); 
+          dragOffset = pos; 
+      } 
       else if (activeHandle.startsWith("edge_")) { 
           let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; 
           corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; 
@@ -354,7 +372,13 @@
       }
       drawCrop();
     });
-    window.addEventListener('pointerup', () => { clearTimeout(loupeTimeout); loupeCanvas.style.display = 'none'; activeHandle = null; });
+    
+    window.addEventListener('pointerup', () => { 
+        clearTimeout(loupeTimeout);
+        loupeCanvas.style.display = 'none';
+        activeHandle = null; 
+    });
+
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
         var words = text.split(' '); var line = '';
@@ -451,6 +475,7 @@
       }
 
       document.getElementById('editorFilas').innerHTML = htmlEditor;
+
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
       // DIBUJAR FINAL
@@ -475,7 +500,7 @@
         }
       });
 
-      // SELLO DINÁMICO (Más abajo y pegado a la derecha)
+      // SELLO DINÁMICO (Estrecho, empujado a la derecha, 10 veces más abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
@@ -483,7 +508,7 @@
       let stampH = 120 + (rubricTxt.length * 18);
       
       let stampX = canvasF.width - stampW - 30; // Totalmente a la derecha
-      let stampY = matrixBottomY + 140; // 10 veces más abajo (140px)
+      let stampY = matrixBottomY + 140; // 10 veces más abajo (140px de separación)
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -515,7 +540,7 @@
 
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
+      // FORMATEO EXACTO DE ARCHIVO: [CURSO]-[TIPO]-[TEMA]-[INICIALES]-[MS][FECHA]
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
@@ -526,6 +551,7 @@
     }
 
     function descargarImg() {
+      // Chrome Android necesita este truco para descargar bien desde un canvas
       let canvasF = document.getElementById('canvasFinal');
       let base64 = canvasF.toDataURL('image/jpeg', 0.85);
       let a = document.createElement("a"); a.href = base64; a.download = finalName + ".jpg";
