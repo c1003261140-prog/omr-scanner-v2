@@ -40,6 +40,7 @@
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
     
+    /* LUPA PARA PRECISIÓN MÓVIL */
     #loupe { display: none; position: absolute; border: 3px solid #10b981; border-radius: 50%; width: 120px; height: 120px; pointer-events: none; z-index: 100; box-shadow: 0 0 15px rgba(0,0,0,0.8); background: #000; }
   </style>
 </head>
@@ -95,7 +96,7 @@
   </div>
 
   <div id="p-crop" class="panel">
-    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro EXACTAMENTE a las esquinas del borde negro grueso de las respuestas. (Sostenga 1 seg para ver la lupa).</div>
+    <div class="instruccion" style="color:#10b981;">Ajuste las esquinas EXACTAMENTE al borde negro grueso de las burbujas (Sostenga para lupa).</div>
     <div class="crop-stage">
         <canvas id="canvasCrop"></canvas>
         <canvas id="loupe"></canvas>
@@ -113,7 +114,7 @@
       <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
     </div>
     
-    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar la imagen👇</div>
+    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar👇</div>
     <div class="visor-final">
       <canvas id="canvasFinal"></canvas>
     </div>
@@ -133,6 +134,9 @@
   </div>
 
   <script>
+    // ==========================================
+    // PONGA AQUÍ SU URL (TERMINADA EN /exec)
+    // ==========================================
     const URL_APP = "https://script.google.com/macros/s/AKfycbxbdnobu9aBFhXkZEfY8g2TeCiK4HEvjB6Rujp5h3O-PuJsd9j7xIj1JikgHlICXfgAAw/exec"; 
 
     let examenes = [], alumnos = [], curExamen = null, curAlumno = null;
@@ -184,7 +188,7 @@
       });
     }
 
-    // AGREGAR ESTUDIANTE EN VIVO A GOOGLE SHEETS
+    // --- AGREGAR ESTUDIANTE EN VIVO ---
     function prepararNuevoEstudiante() {
         if(!curExamen) { alert("Primero seleccione un examen en el menú para saber a qué curso agregar al estudiante."); return; }
         let curso = curExamen.curso; let maxLista = 0;
@@ -342,16 +346,6 @@
     });
     window.addEventListener('pointerup', () => { clearTimeout(loupeTimeout); loupeCanvas.style.display = 'none'; activeHandle = null; });
 
-    function wrapText(context, text, x, y, maxWidth, lineHeight) {
-        var words = text.split(' '); var line = '';
-        for(var n = 0; n < words.length; n++) {
-          var testLine = line + words[n] + ' '; var metrics = context.measureText(testLine);
-          if (metrics.width > maxWidth && n > 0) { context.fillText(line, x, y); line = words[n] + ' '; y += lineHeight; } 
-          else { line = testLine; }
-        }
-        context.fillText(line, x, y); return y + lineHeight;
-    }
-
     let warpedMatBase = null;
 
     function procesar() {
@@ -362,7 +356,7 @@
       let src = cv.imread(mesaImg);
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
       
-      // EL RECUADRO NEGRO EN VISTA WEB TIENE 40px DE CABECERA Y LUEGO LAS FILAS DE 40px
+      // EL RECUADRO NEGRO EN VISTA WEB TIENE CELDAS DE 40x40
       let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
       
@@ -465,7 +459,7 @@
         }
       });
 
-      // SELLO DINÁMICO (Super angosto, arrinconado, abajo)
+      // SELLO DINÁMICO (Estrecho, empujado a la derecha, muy abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
@@ -504,7 +498,7 @@
 
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
+      // FORMATEO EXACTO DE ARCHIVO (Sin .jpg para Sheets)
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
