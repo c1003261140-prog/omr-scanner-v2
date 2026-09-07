@@ -40,7 +40,6 @@
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
     
-    /* LUPA PARA PRECISIÓN MÓVIL */
     #loupe { display: none; position: absolute; border: 3px solid #10b981; border-radius: 50%; width: 120px; height: 120px; pointer-events: none; z-index: 100; box-shadow: 0 0 15px rgba(0,0,0,0.8); background: #000; }
   </style>
 </head>
@@ -96,7 +95,7 @@
   </div>
 
   <div id="p-crop" class="panel">
-    <div class="instruccion" style="color:#10b981;">Ajuste las 4 esquinas azules EXACTAMENTE a las 4 esquinas del RECUADRO NEGRO.</div>
+    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro EXACTAMENTE a las esquinas del borde negro grueso de las respuestas. (Sostenga 1 seg para ver la lupa).</div>
     <div class="crop-stage">
         <canvas id="canvasCrop"></canvas>
         <canvas id="loupe"></canvas>
@@ -119,6 +118,7 @@
       <canvas id="canvasFinal"></canvas>
     </div>
 
+    <!-- REVISIÓN MANUAL -->
     <div id="manualEditor">
       <div class="editor-title">✏️ REVISIÓN MANUAL</div>
       <div id="editorFilas"></div>
@@ -133,9 +133,6 @@
   </div>
 
   <script>
-    // ==========================================
-    // PONGA AQUÍ SU URL (TERMINADA EN /exec)
-    // ==========================================
     const URL_APP = "https://script.google.com/macros/s/AKfycbxbdnobu9aBFhXkZEfY8g2TeCiK4HEvjB6Rujp5h3O-PuJsd9j7xIj1JikgHlICXfgAAw/exec"; 
 
     let examenes = [], alumnos = [], curExamen = null, curAlumno = null;
@@ -187,7 +184,7 @@
       });
     }
 
-    // AGREGAR ESTUDIANTE EN VIVO
+    // AGREGAR ESTUDIANTE EN VIVO A GOOGLE SHEETS
     function prepararNuevoEstudiante() {
         if(!curExamen) { alert("Primero seleccione un examen en el menú para saber a qué curso agregar al estudiante."); return; }
         let curso = curExamen.curso; let maxLista = 0;
@@ -365,7 +362,7 @@
       let src = cv.imread(mesaImg);
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
       
-      // MATEMÁTICA EXACTA: Mapea al cuadro negro exterior
+      // EL RECUADRO NEGRO EN VISTA WEB TIENE 40px DE CABECERA Y LUEGO LAS FILAS DE 40px
       let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
       
@@ -395,6 +392,7 @@
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
+          // Coordenada matemática exacta: centro de celda
           let cx = 40 + c*40 + 20; 
           let cy = 40 + r*40 + 20;
           let roi = bin.roi(new cv.Rect(cx-9, cy-9, 18, 18));
@@ -467,15 +465,15 @@
         }
       });
 
-      // SELLO DINÁMICO (Estrecho, empujado a la derecha, muy abajo)
+      // SELLO DINÁMICO (Super angosto, arrinconado, abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
       let stampW = 280; 
-      let stampH = 120 + (rubricTxt.length * 18);
+      let stampH = 100 + (rubricTxt.length * 15);
       
       let stampX = canvasF.width - stampW - 20; 
-      let stampY = matrixBottomY + 160; 
+      let stampY = matrixBottomY + 120; 
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -484,29 +482,29 @@
       ctxF.fillRect(stampX, stampY, stampW, stampH);
       ctxF.lineWidth = 3; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
-      ctxF.fillStyle = "black"; ctxF.font = "bold 14px Arial";
-      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 10, stampY + 25);
-      ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 10, stampY + 45);
+      ctxF.fillStyle = "black"; ctxF.font = "bold 13px Arial";
+      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 10, stampY + 22);
+      ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 10, stampY + 40);
       
       ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 20px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 10, stampY + 75);
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 10, stampY + 65);
       
       ctxF.fillStyle = "black"; ctxF.font = "12px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 140, stampY + 75);
+      ctxF.fillText(`(${aciertos} bien, ${fallos} mal)`, stampX + 140, stampY + 65);
 
-      let rubY = stampY + 105;
-      ctxF.font = "12px Arial";
+      let rubY = stampY + 90;
+      ctxF.font = "11px Arial";
       rubricTxt.forEach((rt) => {
         ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
-        rubY = wrapText(ctxF, rt, stampX + 10, rubY, stampW - 15, 16) + 2;
+        rubY = wrapText(ctxF, rt, stampX + 10, rubY, stampW - 15, 14) + 2;
       });
 
-      ctxF.fillStyle = "#64748b"; ctxF.font = "bold 10px Arial";
-      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 70, stampY + stampH - 8);
+      ctxF.fillStyle = "#64748b"; ctxF.font = "bold 9px Arial";
+      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 70, stampY + stampH - 6);
 
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO EXACTO DE ARCHIVO (Sin .jpg para Sheets)
+      // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
