@@ -3,75 +3,93 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner - Integración 30 Columnas</title>
+  <title>OMR Scanner - App Móvil Estudiantes</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
-    body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 10px; }
+    body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 10px; touch-action: pan-y;}
     .panel { display: none; flex-direction: column; max-width: 600px; margin: 0 auto; }
     .active { display: flex; }
-    select, input, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #3b82f6; font-size: 1rem; font-weight:bold;}
+    select, input, button { width: 100%; padding: 15px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #3b82f6; font-size: 1.1rem; font-weight:bold; box-sizing:border-box;}
     input, select { background: #1e293b; color: white; }
     .btn-green { background: #10b981; color: white; } .btn-blue { background: #3b82f6; color: white; } .btn-red { background: #ef4444; color: white; } .btn-orange { background: #ea580c; color: white;}
     
-    .camera-wrapper, .crop-stage { width: 100%; aspect-ratio: 8.5/11; background: #000; margin-bottom: 10px; position: relative; border: 2px solid #3b82f6; border-radius: 6px; overflow: hidden;}
+    .camera-wrapper, .crop-stage, .page-crop-stage { width: 100%; aspect-ratio: 8.5/11; background: #000; margin-bottom: 15px; position: relative; border: 2px solid #3b82f6; border-radius: 8px; overflow: hidden; touch-action: none;}
+    .page-crop-stage { border-color: #ea580c; } .crop-stage { border-color: #10b981; }
     video, canvas { width: 100%; height: 100%; position: absolute; top:0; left:0; object-fit: cover; }
     
-    .visor-pequeno { width: 100%; height: 120px; border: 2px solid #ea580c; background: #000; margin-bottom: 10px; position: relative;}
+    .filter-panel { background: #1e293b; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3b82f6; text-align: center;}
+    .filter-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .filter-row label { font-size: 0.9rem; color: #94a3b8; width: 70px; font-weight: bold;}
+    .filter-row input[type=range] { flex: 1; margin: 0 10px; accent-color: #3b82f6; height: 25px;}
+    .filter-row span { font-size: 0.9rem; color: #f8fafc; width: 35px; text-align: right; }
+
+    .visor-pequeno { width: 50%; height: auto; aspect-ratio: 1/1; border: 2px solid #ea580c; background: #000; margin: 10px auto; position: relative; border-radius:6px; overflow:hidden;}
     #bwCanvas { width: 100%; height: 100%; object-fit: contain; }
     
-    .visor-final { width: 100%; height: auto; min-height: 400px; border: 3px solid #10b981; background: #000; margin-bottom: 10px; position: relative; border-radius: 8px;}
-    #canvasFinal { width: 100%; height: auto; position: relative; object-fit: contain; display:none;}
-    #imgFinalDescarga { width: 100%; height: auto; object-fit: contain; display: none; max-height: 60vh; }
+    .visor-final { width: 100%; height: auto; min-height: 400px; border: 3px solid #10b981; background: #000; margin-bottom: 15px; position: relative; border-radius: 8px; text-align:center;}
+    #canvasFinal { display: none; }
+    #imgFinalDescarga { width: 100%; height: auto; object-fit: contain; display: none; max-height: 65vh; }
     
-    #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.7rem; padding: 10px; white-space: pre-wrap; overflow-x: auto; margin-top: 20px;}
+    #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
+    .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
   </style>
 </head>
 <body>
 
   <!-- PANEL 1: CONFIG -->
   <div id="p-config" class="panel active">
-    <h2>1. Conexión y Config</h2>
-    <input type="password" id="pin" placeholder="Ingrese PIN">
+    <h2 style="text-align:center; margin-top:0;">1. Configuración</h2>
+    <input type="password" id="pin" placeholder="Ingrese PIN de Seguridad">
     <button class="btn-blue" id="btnLogin" onclick="iniciar()">Verificar y Cargar Datos</button>
     <select id="selExamen" onchange="cargarAlumnos()"><option>-- Examen --</option></select>
-    <select id="selEstudiante"><option>-- Alumno --</option></select>
+    <select id="selEstudiante"><option>-- Estudiante --</option></select>
     <button class="btn-green" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Tomar Foto</button>
     
-    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Diagnóstico de Red</button>
+    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Diagnóstico</button>
     <div id="diagnosticoText">Esperando datos...</div>
   </div>
 
   <!-- PANEL 2: CÁMARA Y RECORTE -->
   <div id="p-camara" class="panel">
-    <h3 style="margin:0; text-align:center;">Encuadre la hoja OMR</h3>
+    <div class="instruccion">Encuadre toda la hoja y capture.</div>
     <div class="camera-wrapper"><video id="video" autoplay playsinline></video></div>
     <button class="btn-green" onclick="tomarFoto()">Capturar</button>
     <button class="btn-red" onclick="switchPanel('p-config')">Cancelar</button>
   </div>
+  
+  <div id="p-crop-mesa" class="panel">
+    <div class="instruccion" style="color:#ea580c;">Arrastre las líneas para recortar el fondo.</div>
+    <div class="page-crop-stage"><canvas id="canvasMesa"></canvas></div>
+    <button class="btn-orange" onclick="confirmarMesa()">✂️ Aceptar Recorte</button>
+    <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
+  </div>
+
   <div id="p-crop" class="panel">
-    <h3 style="margin:0; text-align:center;">Ajuste el recuadro azul a las respuestas</h3>
+    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro a las respuestas.</div>
     <div class="crop-stage"><canvas id="canvasCrop"></canvas></div>
     <button class="btn-blue" onclick="procesar()">⚡ Evaluar</button>
-    <button class="btn-red" onclick="switchPanel('p-camara')">Volver a Tomar Foto</button>
+    <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
   </div>
 
   <!-- PANEL 3: RESULTADOS -->
   <div id="p-resultado" class="panel">
-    <h3 style="margin:0; text-align:center;">Visor de Lectura (B/N)</h3>
-    <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
+    <div class="filter-panel">
+      <div class="filter-row"><label>Lápiz</label><input type="range" id="slUmbral" min="100" max="250" value="168" oninput="aplicarFiltrosBinarizacion()"><span id="valUmbral">168</span></div>
+      <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
+    </div>
     
-    <h3 style="margin:0; text-align:center;">Mantenga presionado para Guardar👇</h3>
+    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar👇</div>
     <div class="visor-final">
       <canvas id="canvasFinal"></canvas>
       <img id="imgFinalDescarga" alt="Examen Evaluado">
     </div>
     
     <div id="reviewButtons">
-      <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen Manualmente</button>
+      <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen</button>
       <button class="btn-green" onclick="enviarSheets()">📤 Enviar a Sheets</button>
       <button class="btn-red" onclick="switchPanel('p-config')">Volver</button>
     </div>
-    <div id="loaderUpload" style="display:none; text-align:center; color:#38bdf8; font-weight:bold;">⏳ Enviando datos a Google Sheets...</div>
+    <div id="loaderUpload" style="display:none; text-align:center; color:#38bdf8; font-weight:bold; font-size:1.2rem; margin-top:20px;">⏳ Enviando datos a Sheets...</div>
   </div>
 
   <script>
@@ -81,13 +99,18 @@
     const URL_APP = "https://script.google.com/macros/s/AKfycbxbdnobu9aBFhXkZEfY8g2TeCiK4HEvjB6Rujp5h3O-PuJsd9j7xIj1JikgHlICXfgAAw/exec"; 
 
     let examenes = [], alumnos = [], curExamen = null, curAlumno = null;
-    let rawImg = null, finalBase64 = "", finalName = "", resData = {};
+    let rawImg = null, mesaImg = null, finalBase64 = "", finalName = "", resData = {};
     let video = document.getElementById('video');
+    
+    let cvsMesa = document.getElementById('canvasMesa'), ctxMesa = cvsMesa.getContext('2d');
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
+    let bwCanvas = document.getElementById('bwCanvas');
+    
+    let lineTop = 0, lineBot = 0, activeLine = null;
     let corners = []; let opencvReady = false;
     
     function onOpenCvReady() { opencvReady = true; }
-    function switchPanel(id) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+    function switchPanel(id) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0);}
 
     async function iniciar() {
       let pin = document.getElementById('pin').value;
@@ -103,7 +126,7 @@
         
         let sel = document.getElementById('selExamen'); sel.innerHTML = "<option>-- Examen --</option>";
         examenes.forEach(e => sel.innerHTML += `<option value="${e.id}">[${e.curso}] ${e.tipo} - ${e.tema}</option>`);
-        alert("Conexión Exitosa. Matriz de 30 columnas cargada.");
+        alert("Conexión Exitosa.");
       } catch(e) { 
         alert("Error: " + e.message); 
         document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;
@@ -114,7 +137,7 @@
 
     function cargarAlumnos() {
       curExamen = examenes.find(e => e.id === document.getElementById('selExamen').value);
-      let sel = document.getElementById('selEstudiante'); sel.innerHTML = "<option>-- Alumno --</option>";
+      let sel = document.getElementById('selEstudiante'); sel.innerHTML = "<option>-- Estudiante --</option>";
       alumnos.filter(a => a.curso === curExamen.curso).forEach(a => {
         sel.innerHTML += `<option value='${JSON.stringify(a)}'>${a.n_lista} - ${a.nombre}</option>`;
       });
@@ -128,14 +151,56 @@
     async function abrirCamara() {
       curAlumno = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('p-camara');
-      stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: 1920}});
-      video.srcObject = stream;
+      try {
+          stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: {ideal: 1920}}});
+          video.srcObject = stream;
+      } catch (e) { alert("Permita la cámara.");}
     }
 
     function tomarFoto() {
       rawImg = document.createElement('canvas'); rawImg.width = video.videoWidth; rawImg.height = video.videoHeight;
       rawImg.getContext('2d').drawImage(video, 0,0);
       stream.getTracks().forEach(t=>t.stop());
+      
+      switchPanel('p-crop-mesa');
+      cvsMesa.width = cvsMesa.clientWidth; cvsMesa.height = cvsMesa.clientHeight;
+      lineTop = cvsMesa.height * 0.05; lineBot = cvsMesa.height * 0.95;
+      dibujarMesa();
+    }
+
+    function dibujarMesa() {
+      ctxMesa.clearRect(0,0, cvsMesa.width, cvsMesa.height);
+      ctxMesa.drawImage(rawImg, 0,0, cvsMesa.width, cvsMesa.height);
+      ctxMesa.fillStyle = "rgba(0,0,0,0.6)"; 
+      ctxMesa.fillRect(0,0, cvsMesa.width, lineTop);
+      ctxMesa.fillRect(0, lineBot, cvsMesa.width, cvsMesa.height - lineBot);
+      
+      ctxMesa.beginPath(); ctxMesa.moveTo(0, lineTop); ctxMesa.lineTo(cvsMesa.width, lineTop);
+      ctxMesa.lineWidth=6; ctxMesa.strokeStyle="red"; ctxMesa.stroke();
+      
+      ctxMesa.beginPath(); ctxMesa.moveTo(0, lineBot); ctxMesa.lineTo(cvsMesa.width, lineBot);
+      ctxMesa.lineWidth=6; ctxMesa.strokeStyle="yellow"; ctxMesa.stroke();
+    }
+
+    cvsMesa.addEventListener('pointerdown', e => {
+      let rect = cvsMesa.getBoundingClientRect(); let y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+      if(Math.abs(y - lineTop) < 50) activeLine = "top"; else if(Math.abs(y - lineBot) < 50) activeLine = "bot";
+    });
+    cvsMesa.addEventListener('pointermove', e => {
+      if(!activeLine) return;
+      let rect = cvsMesa.getBoundingClientRect(); let y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+      if(activeLine === "top") lineTop = Math.max(0, Math.min(lineBot-50, y));
+      if(activeLine === "bot") lineBot = Math.max(lineTop+50, Math.min(cvsMesa.height, y));
+      dibujarMesa();
+    });
+    window.addEventListener('pointerup', () => activeLine = null);
+
+    function confirmarMesa() {
+      let sY = rawImg.height / cvsMesa.height;
+      let rT = lineTop * sY; let rH = (lineBot - lineTop) * sY;
+      mesaImg = document.createElement('canvas'); mesaImg.width = rawImg.width; mesaImg.height = rH;
+      mesaImg.getContext('2d').drawImage(rawImg, 0, rT, rawImg.width, rH, 0, 0, rawImg.width, rH);
+      
       switchPanel('p-crop');
       cvsCrop.width = cvsCrop.clientWidth; cvsCrop.height = cvsCrop.clientHeight;
       corners = [{x:cvsCrop.width*0.5, y:cvsCrop.height*0.1},{x:cvsCrop.width*0.9, y:cvsCrop.height*0.1},{x:cvsCrop.width*0.9, y:cvsCrop.height*0.9},{x:cvsCrop.width*0.5, y:cvsCrop.height*0.9}];
@@ -143,17 +208,17 @@
     }
 
     function drawCrop() {
-      ctxCrop.drawImage(rawImg, 0,0, cvsCrop.width, cvsCrop.height);
+      ctxCrop.drawImage(mesaImg, 0,0, cvsCrop.width, cvsCrop.height);
       ctxCrop.beginPath(); ctxCrop.moveTo(corners[0].x, corners[0].y);
       for(let i=1;i<4;i++) ctxCrop.lineTo(corners[i].x, corners[i].y);
       ctxCrop.closePath(); ctxCrop.lineWidth=3; ctxCrop.strokeStyle="blue"; ctxCrop.stroke();
-      corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 15, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
+      corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
     cvsCrop.addEventListener('touchmove', e => {
       let rect = cvsCrop.getBoundingClientRect(); let x = e.touches[0].clientX - rect.left; let y = e.touches[0].clientY - rect.top;
       let closest = corners.reduce((prev, curr, idx) => { let d = Math.hypot(curr.x-x, curr.y-y); return d < prev.d ? {idx:idx, d:d} : prev; }, {idx:-1, d:1000});
-      if(closest.d < 40) { corners[closest.idx] = {x,y}; drawCrop(); }
+      if(closest.d < 60) { corners[closest.idx] = {x,y}; drawCrop(); }
     });
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
@@ -166,21 +231,34 @@
         context.fillText(line, x, y); return y + lineHeight;
     }
 
+    let warpedMatBase = null;
+
     function procesar() {
-      if(!opencvReady) { alert("OpenCV está cargando, intente en unos segundos."); return;}
+      if(!opencvReady) { alert("Cargando OpenCV..."); return;}
       switchPanel('p-resultado');
       
-      let sX = rawImg.width / cvsCrop.width; let sY = rawImg.height / cvsCrop.height;
-      let src = cv.imread(rawImg);
+      let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
+      let src = cv.imread(mesaImg);
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
       
       let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
-      let warped = new cv.Mat();
-      cv.warpPerspective(src, warped, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
+      if(warpedMatBase) warpedMatBase.delete();
+      warpedMatBase = new cv.Mat();
+      cv.warpPerspective(src, warpedMatBase, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
 
-      let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY);
-      let bin = new cv.Mat(); cv.threshold(gray, bin, 150, 255, cv.THRESH_BINARY_INV);
+      document.getElementById('imgFinalDescarga').style.display = 'none';
+      src.delete(); srcTri.delete(); dstTri.delete();
+
+      aplicarFiltrosBinarizacion();
+    }
+
+    function aplicarFiltrosBinarizacion() {
+      let valU = parseInt(document.getElementById('slUmbral').value);
+      document.getElementById('valUmbral').innerText = valU;
+
+      let gray = new cv.Mat(); cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY);
+      let bin = new cv.Mat(); cv.threshold(gray, bin, valU, 255, cv.THRESH_BINARY_INV);
       cv.imshow('bwCanvas', bin);
 
       let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = []; let detTxt = []; let incTxt = [];
@@ -210,55 +288,70 @@
 
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
+      // DIBUJAR FINAL
       let canvasF = document.getElementById('canvasFinal');
-      canvasF.width = rawImg.width; canvasF.height = rawImg.height;
+      canvasF.width = mesaImg.width; canvasF.height = mesaImg.height;
       let ctxF = canvasF.getContext('2d');
-      ctxF.drawImage(rawImg, 0,0);
+      ctxF.drawImage(mesaImg, 0,0);
 
+      let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
+      let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
+      let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
+      let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
       let mInv = cv.getPerspectiveTransform(dstTri, srcTri);
+
       arrAns.forEach((a, r) => {
         if(a.idx >= 0) {
           let pt = cv.matFromArray(1,1, cv.CV_32FC2, [(a.idx+1)*40+20, (r+1)*40+20]);
           let out = new cv.Mat(); cv.perspectiveTransform(pt, out, mInv);
           ctxF.beginPath(); ctxF.arc(out.data32F[0], out.data32F[1], 15, 0, 2*Math.PI);
-          ctxF.lineWidth=5; ctxF.strokeStyle = a.ok ? "green" : "red"; ctxF.stroke();
+          ctxF.lineWidth=6; ctxF.strokeStyle = a.ok ? "green" : "red"; ctxF.stroke();
           pt.delete(); out.delete();
         }
       });
 
-      let stampW = 650; 
-      let stampH = 180 + (rubricTxt.length * 35);
-      let stampX = canvasF.width - stampW - 30;
-      let stampY = canvasF.height - stampH - 30;
+      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ)
+      let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
+      let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
+      
+      let stampW = 380; 
+      let stampH = 100 + (rubricTxt.length * 18);
+      let stampX = matrixRightX - stampW;
+      let stampY = matrixBottomY + 40; 
+      
+      if(stampX < 20) stampX = 20;
+      if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
 
       ctxF.fillStyle = "rgba(255,255,255,0.95)";
       ctxF.fillRect(stampX, stampY, stampW, stampH);
-      ctxF.lineWidth = 4; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
+      ctxF.lineWidth = 3; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
-      ctxF.fillStyle = "black"; ctxF.font = "bold 40px Arial";
-      ctxF.fillText(`📝 ALUMNO: ${curAlumno.nombre}`, stampX + 20, stampY + 50);
+      ctxF.fillStyle = "black"; ctxF.font = "bold 20px Arial";
+      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 15, stampY + 30);
       
-      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 50px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 20, stampY + 110);
+      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 26px Arial";
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 15, stampY + 60);
       
-      ctxF.fillStyle = "black"; ctxF.font = "28px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 300, stampY + 110);
+      ctxF.fillStyle = "black"; ctxF.font = "14px Arial";
+      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 180, stampY + 60);
 
-      let rubY = stampY + 160;
-      rubricTxt.forEach((rt, i) => {
+      let rubY = stampY + 90;
+      ctxF.font = "12px Arial";
+      rubricTxt.forEach((rt) => {
         ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
-        rubY = wrapText(ctxF, rt, stampX + 20, rubY, stampW - 40, 35) + 5;
+        rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 18) + 2;
       });
 
-      src.delete(); warped.delete(); gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
+      gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-[TIPO 3 DIGITOS]-[TEMA 4 DIGITOS]-[MINUTO][SEGUNDO][FECHA]
+      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
+      let f = curExamen.fila || "A";
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-F${f}-${tema4}-${t3}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
       let imgTag = document.getElementById('imgFinalDescarga');
@@ -293,7 +386,7 @@
         else throw new Error(res.message);
       } catch(e) { 
           alert("Error al enviar: " + e.message); 
-          document.getElementById('reviewButtons').style.display = 'block';
+          document.getElementById('reviewButtons').style.display = 'flex';
       } finally {
           document.getElementById('loaderUpload').style.display = 'none';
       }
