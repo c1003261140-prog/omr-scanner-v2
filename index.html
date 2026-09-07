@@ -85,7 +85,7 @@
     </div>
     
     <div id="reviewButtons">
-      <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen</button>
+      <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen Manualmente</button>
       <button class="btn-green" onclick="enviarSheets()">📤 Enviar a Sheets</button>
       <button class="btn-red" onclick="switchPanel('p-config')">Volver</button>
     </div>
@@ -310,7 +310,7 @@
         }
       });
 
-      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ, A LA DERECHA)
+      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ A LA DERECHA)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
@@ -344,14 +344,13 @@
 
       gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-F[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
-      let f = curExamen.fila || "A";
+      // NOMBRE EXACTO PARA ESTUDIANTE: [CURSO]-[TIPO]-[TEMA]-[TS]
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-F${f}-${tema4}-${t3}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
       let imgTag = document.getElementById('imgFinalDescarga');
