@@ -51,12 +51,33 @@
     <h2 style="text-align:center; margin-top:0;">1. Configuración</h2>
     <input type="password" id="pin" placeholder="Ingrese PIN de Seguridad">
     <button class="btn-blue" id="btnLogin" onclick="iniciar()">Verificar y Cargar Datos</button>
-    <select id="selExamen" onchange="cargarAlumnos()"><option>-- Examen --</option></select>
-    <select id="selEstudiante"><option>-- Estudiante --</option></select>
-    <button class="btn-green" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Tomar Foto</button>
     
+    <select id="selExamen" onchange="cargarAlumnos()"><option>-- Examen --</option></select>
+    
+    <div style="display:flex; gap:10px; margin-bottom:12px;">
+      <select id="selEstudiante" style="margin-bottom:0;"><option>-- Estudiante --</option></select>
+      <button class="btn-orange" style="width:50px; margin-bottom:0; padding:0; font-size:1.5rem;" onclick="prepararNuevoEstudiante()">➕</button>
+    </div>
+    
+    <button class="btn-green" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Tomar Foto</button>
     <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Diagnóstico</button>
     <div id="diagnosticoText">Esperando datos...</div>
+  </div>
+
+  <!-- PANEL 1.5: AGREGAR ESTUDIANTE -->
+  <div id="p-add-student" class="panel">
+    <h2 style="text-align:center; margin-top:0;">Registrar Estudiante</h2>
+    <div id="helperLista" style="color:#ea580c; font-size:0.95rem; font-weight:bold; margin-bottom:15px; text-align:center;"></div>
+    <input type="text" id="addCurso" placeholder="Curso" disabled style="background:#475569; color:#94a3b8;">
+    <input type="number" id="addNLista" placeholder="N° de Lista">
+    <input type="text" id="addNombre" placeholder="Apellidos y Nombres">
+    <select id="addObs">
+        <option value="ESTUDIANTE NUEVO">Estudiante Nuevo</option>
+        <option value="CORRECCION DE CURSO">Corrección de Curso</option>
+        <option value="VARIOS">Varios</option>
+    </select>
+    <button class="btn-green" id="btnSaveStudent" onclick="guardarNuevoEstudiante()">Guardar Estudiante</button>
+    <button class="btn-red" onclick="switchPanel('p-config')">Cancelar</button>
   </div>
 
   <!-- PANEL 2: CÁMARA Y RECORTE -->
@@ -127,7 +148,6 @@
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
     let bwCanvas = document.getElementById('bwCanvas');
     
-    // Variables de Lupa
     let loupeTimeout = null;
     let loupeCanvas = document.getElementById('loupe');
     let loupeCtx = loupeCanvas.getContext('2d');
@@ -170,12 +190,56 @@
       });
     }
 
+    // --- AGREGAR ESTUDIANTE DESDE EL CELULAR ---
+    function prepararNuevoEstudiante() {
+        if(!curExamen) { alert("Primero seleccione un examen en el menú para saber a qué curso agregar al estudiante."); return; }
+        let curso = curExamen.curso;
+        let maxLista = 0;
+        alumnos.forEach(a => {
+            if(a.curso === curso && parseInt(a.n_lista) > maxLista) maxLista = parseInt(a.n_lista);
+        });
+        document.getElementById('addCurso').value = curso;
+        document.getElementById('addNLista').value = maxLista + 1;
+        document.getElementById('addNombre').value = "";
+        document.getElementById('helperLista').innerText = `El N° de Lista mayor actual en ${curso} es ${maxLista}. Se sugiere usar el N° ${maxLista + 1}.`;
+        switchPanel('p-add-student');
+    }
+
+    async function guardarNuevoEstudiante() {
+        let pin = document.getElementById('pin').value;
+        let curso = document.getElementById('addCurso').value;
+        let nLista = document.getElementById('addNLista').value;
+        let nombre = document.getElementById('addNombre').value.toUpperCase();
+        let obs = document.getElementById('addObs').value;
+
+        if(!nombre) { alert("Escriba el nombre del estudiante"); return; }
+        document.getElementById('btnSaveStudent').innerText = "⏳ Guardando...";
+
+        let payload = { pin: pin, accion: "addStudent", curso: curso, nLista: nLista, nombre: nombre, observacion: obs };
+
+        try {
+            let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(payload), headers: {"Content-Type": "text/plain"} });
+            let res = await req.json();
+            if(res.status === "success") { 
+                alert("Estudiante agregado correctamente a Google Sheets.");
+                alumnos.push({curso: curso, n_lista: nLista, nombre: nombre});
+                cargarAlumnos();
+                switchPanel('p-config');
+            } else { throw new Error(res.message); }
+        } catch(e) { 
+            alert("Error al agregar: " + e.message); 
+        } finally {
+            document.getElementById('btnSaveStudent').innerText = "Guardar Estudiante";
+        }
+    }
+
     function verDiagnostico() {
       let t = document.getElementById('diagnosticoText');
       t.style.display = (t.style.display === "none" || t.style.display === "") ? "block" : "none";
     }
 
     async function abrirCamara() {
+      if(!document.getElementById('selEstudiante').value.includes("{")) { alert("Seleccione un estudiante"); return;}
       curAlumno = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('p-camara');
       try {
@@ -242,24 +306,17 @@
       corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
-    // --- RECUADRO AZUL ARRASTRABLE COMPLETO Y LUPA DE PRECISIÓN ---
     function getTouchPos(e) { let rect = cvsCrop.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
     function distToSegment(p, v, w) { let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2); if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y); let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y))); }
     function pointInPolygon(point, vs) { let x = point.x, y = point.y; let inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside; }
 
     function updateLoupe(cx, cy) {
       if (loupeCanvas.style.display === 'none') return;
-      loupeCanvas.style.left = (cx - 60) + 'px';
-      loupeCanvas.style.top = (cy - 140) + 'px'; // Se dibuja arriba del dedo
-      
-      loupeCtx.clearRect(0, 0, 120, 120);
-      loupeCtx.save();
+      loupeCanvas.style.left = (cx - 60) + 'px'; loupeCanvas.style.top = (cy - 140) + 'px'; 
+      loupeCtx.clearRect(0, 0, 120, 120); loupeCtx.save();
       loupeCtx.beginPath(); loupeCtx.arc(60, 60, 60, 0, Math.PI*2); loupeCtx.clip();
-      
       let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
-      let srcW = 60 * sX; let srcH = 60 * sY;
-      let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
-      
+      let srcW = 60 * sX; let srcH = 60 * sY; let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
       loupeCtx.drawImage(mesaImg, srcX, srcY, srcW, srcH, 0, 0, 120, 120);
       loupeCtx.strokeStyle = 'red'; loupeCtx.lineWidth = 2;
       loupeCtx.beginPath(); loupeCtx.moveTo(60, 40); loupeCtx.lineTo(60, 80); loupeCtx.stroke();
@@ -269,7 +326,6 @@
 
     cvsCrop.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e); activeHandle = null;
-      // 1. Detectar Esquinas
       for (let i=0; i<4; i++) { 
           if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 60) { 
               activeHandle = i; 
@@ -277,14 +333,7 @@
               return; 
           } 
       }
-      // 2. Detectar Bordes (Lados el doble de anchos para agarrar fácil)
-      for (let i=0; i<4; i++) { 
-          let j = (i + 1) % 4; 
-          if (distToSegment(pos, corners[i], corners[j]) < 80) { 
-              activeHandle = `edge_${i}`; dragOffset = pos; return; 
-          } 
-      }
-      // 3. Detectar Centro (Mueve toda la figura)
+      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 80) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
       if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
     });
 
@@ -297,10 +346,7 @@
           corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); 
           if (loupeCanvas.style.display === 'block') updateLoupe(pos.x, pos.y);
       } 
-      else if (activeHandle === "center") { 
-          corners.forEach(c => { c.x += dx; c.y += dy; }); 
-          dragOffset = pos; 
-      } 
+      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
       else if (activeHandle.startsWith("edge_")) { 
           let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; 
           corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; 
@@ -308,13 +354,7 @@
       }
       drawCrop();
     });
-    
-    window.addEventListener('pointerup', () => { 
-        clearTimeout(loupeTimeout);
-        loupeCanvas.style.display = 'none';
-        activeHandle = null; 
-    });
-
+    window.addEventListener('pointerup', () => { clearTimeout(loupeTimeout); loupeCanvas.style.display = 'none'; activeHandle = null; });
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
         var words = text.split(' '); var line = '';
@@ -435,15 +475,15 @@
         }
       });
 
-      // SELLO DINÁMICO REFINADO (Más angosto, empujado a la derecha, más abajo)
+      // SELLO DINÁMICO (Más abajo y pegado a la derecha)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
-      let stampW = 340; 
-      let stampH = 100 + (rubricTxt.length * 18);
-      let stampX = matrixRightX - stampW + 120; // Empujado a la derecha
-      if (stampX + stampW > canvasF.width - 20) stampX = canvasF.width - stampW - 20; // Tope derecho de la pantalla
-      let stampY = matrixBottomY + 70; // Bajado 2 renglones más
+      let stampW = 280; 
+      let stampH = 120 + (rubricTxt.length * 18);
+      
+      let stampX = canvasF.width - stampW - 30; // Totalmente a la derecha
+      let stampY = matrixBottomY + 140; // 10 veces más abajo (140px)
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -452,30 +492,30 @@
       ctxF.fillRect(stampX, stampY, stampW, stampH);
       ctxF.lineWidth = 3; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
-      ctxF.fillStyle = "black"; ctxF.font = "bold 16px Arial";
+      ctxF.fillStyle = "black"; ctxF.font = "bold 14px Arial";
       ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 15, stampY + 25);
       ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 15, stampY + 45);
       
-      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 22px Arial";
+      ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 20px Arial";
       ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 15, stampY + 75);
       
-      ctxF.fillStyle = "black"; ctxF.font = "14px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 180, stampY + 75);
+      ctxF.fillStyle = "black"; ctxF.font = "12px Arial";
+      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 140, stampY + 75);
 
-      let rubY = stampY + 100;
+      let rubY = stampY + 105;
       ctxF.font = "12px Arial";
       rubricTxt.forEach((rt) => {
         ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
         rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 16) + 2;
       });
 
-      // Añadir ID_Examen en la esquina inferior derecha del sello
+      // Código de Examen abajo a la derecha del sello
       ctxF.fillStyle = "#64748b"; ctxF.font = "bold 10px Arial";
-      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 80, stampY + stampH - 10);
+      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 70, stampY + stampH - 8);
 
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO CON INICIALES DEL ESTUDIANTE
+      // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
@@ -486,7 +526,6 @@
     }
 
     function descargarImg() {
-      // Como el nombre NO tiene .jpg escrito en la variable, se lo añadimos al descargar
       let canvasF = document.getElementById('canvasFinal');
       let base64 = canvasF.toDataURL('image/jpeg', 0.85);
       let a = document.createElement("a"); a.href = base64; a.download = finalName + ".jpg";
@@ -498,7 +537,6 @@
       document.getElementById('reviewButtons').style.display = 'none';
       document.getElementById('loaderUpload').style.display = 'block';
 
-      // Enviamos el finalName que no tiene la extensión, App Script le suma el .jpg en la columna URL_Drive
       let p = {
         pin: document.getElementById('pin').value, idExamen: curExamen.id, curso: curExamen.curso, 
         tipo: curExamen.tipo, trimestre: curExamen.trimestre, nLista: curAlumno.n_lista, nombre: curAlumno.nombre, 
