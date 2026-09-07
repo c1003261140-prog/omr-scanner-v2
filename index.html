@@ -344,13 +344,14 @@
 
       gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // NOMBRE EXACTO PARA ESTUDIANTE: [CURSO]-[TIPO]-[TEMA]-[TS]
+      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-F[FILA]-[TEMA 4 DIGITOS]-[TIPO 3 DIGITOS]-[MS][FECHA]
+      let f = curExamen.fila || "A";
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-F${f}-${tema4}-${t3}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
       let imgTag = document.getElementById('imgFinalDescarga');
