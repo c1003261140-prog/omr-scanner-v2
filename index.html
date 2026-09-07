@@ -20,8 +20,9 @@
     .visor-pequeno { width: 100%; height: 120px; border: 2px solid #ea580c; background: #000; margin-bottom: 10px; position: relative;}
     #bwCanvas { width: 100%; height: 100%; object-fit: contain; }
     
-    .visor-final { width: 100%; height: auto; min-height: 400px; border: 3px solid #10b981; background: #000; margin-bottom: 10px; position: relative;}
-    #canvasFinal { width: 100%; height: auto; position: relative; object-fit: contain;}
+    .visor-final { width: 100%; height: auto; min-height: 400px; border: 3px solid #10b981; background: #000; margin-bottom: 10px; position: relative; border-radius: 8px;}
+    #canvasFinal { width: 100%; height: auto; position: relative; object-fit: contain; display:none;}
+    #imgFinalDescarga { width: 100%; height: auto; object-fit: contain; display: none; max-height: 60vh; }
     
     #diagnosticoText { background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.7rem; padding: 10px; white-space: pre-wrap; overflow-x: auto; margin-top: 20px;}
   </style>
@@ -32,13 +33,12 @@
   <div id="p-config" class="panel active">
     <h2>1. Conexión y Config</h2>
     <input type="password" id="pin" placeholder="Ingrese PIN">
-    <button class="btn-blue" onclick="iniciar()">Verificar y Cargar Datos</button>
+    <button class="btn-blue" id="btnLogin" onclick="iniciar()">Verificar y Cargar Datos</button>
     <select id="selExamen" onchange="cargarAlumnos()"><option>-- Examen --</option></select>
     <select id="selEstudiante"><option>-- Alumno --</option></select>
-    <button class="btn-green" onclick="abrirCamara()">📸 Tomar Foto</button>
+    <button class="btn-green" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Tomar Foto</button>
     
-    <!-- Botón Diagnóstico para ver qué llega -->
-    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Diagnóstico de Datos</button>
+    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Datos (Diagnóstico)</button>
     <div id="diagnosticoText">Esperando datos...</div>
   </div>
 
@@ -47,24 +47,32 @@
     <h3 style="margin:0; text-align:center;">Encuadre la hoja OMR</h3>
     <div class="camera-wrapper"><video id="video" autoplay playsinline></video></div>
     <button class="btn-green" onclick="tomarFoto()">Capturar</button>
+    <button class="btn-red" onclick="switchPanel('p-config')">Cancelar</button>
   </div>
   <div id="p-crop" class="panel">
     <h3 style="margin:0; text-align:center;">Ajuste el recuadro azul a las respuestas</h3>
     <div class="crop-stage"><canvas id="canvasCrop"></canvas></div>
     <button class="btn-blue" onclick="procesar()">⚡ Evaluar</button>
+    <button class="btn-red" onclick="switchPanel('p-camara')">Volver a Tomar Foto</button>
   </div>
 
   <!-- PANEL 3: RESULTADOS -->
   <div id="p-resultado" class="panel">
-    <h3 style="margin:0; text-align:center;">Visor B/N (Recorte Derecho)</h3>
+    <h3 style="margin:0; text-align:center;">Visor de Lectura (B/N)</h3>
     <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
     
-    <h3 style="margin:0; text-align:center;">Resultado Final y Sello</h3>
-    <div class="visor-final"><canvas id="canvasFinal"></canvas></div>
+    <h3 style="margin:0; text-align:center;">Mantenga presionado para Guardar👇</h3>
+    <div class="visor-final">
+      <canvas id="canvasFinal"></canvas>
+      <img id="imgFinalDescarga" alt="Examen Evaluado">
+    </div>
     
-    <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen</button>
-    <button class="btn-green" onclick="enviarSheets()">📤 Enviar a Sheets</button>
-    <button class="btn-red" onclick="switchPanel('p-config')">Volver</button>
+    <div id="reviewButtons">
+      <button class="btn-blue" onclick="descargarImg()">💾 Guardar Imagen Manualmente</button>
+      <button class="btn-green" onclick="enviarSheets()">📤 Enviar a Sheets</button>
+      <button class="btn-red" onclick="switchPanel('p-config')">Volver</button>
+    </div>
+    <div id="loaderUpload" style="display:none; text-align:center; color:#38bdf8; font-weight:bold;">⏳ Conectando...</div>
   </div>
 
   <script>
@@ -77,26 +85,32 @@
     let rawImg = null, finalBase64 = "", finalName = "", resData = {};
     let video = document.getElementById('video');
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
-    let corners = []; let activeC = null; let opencvReady = false;
+    let corners = []; let opencvReady = false;
+    
     function onOpenCvReady() { opencvReady = true; }
     function switchPanel(id) { document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.getElementById(id).classList.add('active'); }
 
     async function iniciar() {
       let pin = document.getElementById('pin').value;
-      document.getElementById('diagnosticoText').innerText = "Conectando...";
+      document.getElementById('diagnosticoText').innerText = "Conectando con Google Sheets...";
+      document.getElementById('btnLogin').innerText = "⏳ Verificando...";
       try {
         let req = await fetch(URL_APP + "?pin=" + pin);
         let res = await req.json();
         if(res.status === "error") throw new Error(res.message);
         examenes = res.examenes; alumnos = res.estudiantes;
         
-        // Llenar diagnostico en texto pequeño
         document.getElementById('diagnosticoText').innerText = JSON.stringify(examenes[0], null, 2);
         
         let sel = document.getElementById('selExamen'); sel.innerHTML = "<option>-- Examen --</option>";
         examenes.forEach(e => sel.innerHTML += `<option value="${e.id}">[${e.curso}] ${e.tipo} - ${e.tema}</option>`);
-        alert("Conexión Exitosa");
-      } catch(e) { alert("Error: " + e.message); document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;}
+        alert("Conexión Exitosa con la Base de Datos");
+      } catch(e) { 
+        alert("Error: " + e.message); 
+        document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;
+      } finally {
+        document.getElementById('btnLogin').innerText = "Verificar y Cargar Datos";
+      }
     }
 
     function cargarAlumnos() {
@@ -109,7 +123,7 @@
 
     function verDiagnostico() {
       let t = document.getElementById('diagnosticoText');
-      t.style.display = t.style.display === "none" ? "block" : "none";
+      t.style.display = t.style.display === "none" || t.style.display === "" ? "block" : "none";
     }
 
     async function abrirCamara() {
@@ -143,7 +157,19 @@
       if(closest.d < 40) { corners[closest.idx] = {x,y}; drawCrop(); }
     });
 
+    // Función para dibujar textos largos sin salirse del cuadro
+    function wrapText(context, text, x, y, maxWidth, lineHeight) {
+        var words = text.split(' '); var line = '';
+        for(var n = 0; n < words.length; n++) {
+          var testLine = line + words[n] + ' '; var metrics = context.measureText(testLine);
+          if (metrics.width > maxWidth && n > 0) { context.fillText(line, x, y); line = words[n] + ' '; y += lineHeight; } 
+          else { line = testLine; }
+        }
+        context.fillText(line, x, y); return y + lineHeight;
+    }
+
     function procesar() {
+      if(!opencvReady) { alert("OpenCV está cargando, intente en unos segundos."); return;}
       switchPanel('p-resultado');
       
       let sX = rawImg.width / cvsCrop.width; let sY = rawImg.height / cvsCrop.height;
@@ -155,13 +181,14 @@
       let warped = new cv.Mat();
       cv.warpPerspective(src, warped, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
 
-      // Filtro
+      // Filtro B/N Fijo para garantizar lectura
       let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY);
       let bin = new cv.Mat(); cv.threshold(gray, bin, 150, 255, cv.THRESH_BINARY_INV);
-      cv.imshow('bwCanvas', bin); // IMAGEN SUPERIOR CHICA
+      cv.imshow('bwCanvas', bin);
 
-      // Leer respuestas
-      let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = [];
+      // Leer respuestas y enlazar con Arrays de 10 posiciones de Rúbricas
+      let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = []; let detTxt = []; let incTxt = [];
+      
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
@@ -170,28 +197,33 @@
           if(pts > maxP && pts > 5) { maxP = pts; mIdx = c; }
         }
         let ans = mIdx>=0 ? ["A","B","C","D"][mIdx] : "X";
-        let esOk = ans === curExamen.clave[r];
+        let esOk = (ans === curExamen.clave[r]);
+        
         if(esOk) { 
           aciertos++; 
-          rubricTxt.push(`P${r+1}: ${curExamen.rubA[r] || "OK"}`); 
+          let ra = curExamen.rubA[r] && curExamen.rubA[r] !== "" ? curExamen.rubA[r] : "Correcto";
+          rubricTxt.push(`✅ P${r+1}: ${ra}`); 
         } else { 
           fallos++; 
-          rubricTxt.push(`P${r+1}: ${curExamen.rubF[r] || "Revisar"}`); 
+          incTxt.push(r+1);
+          let rf = curExamen.rubF[r] && curExamen.rubF[r] !== "" ? curExamen.rubF[r] : "Revisar";
+          rubricTxt.push(`❌ P${r+1}: ${rf}`); 
         }
+        
+        detTxt.push(`${r+1}:${ans}(${esOk?'OK':'❌'+curExamen.clave[r]})`);
         arrAns.push({idx: mIdx, ok: esOk});
       }
 
-      resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100)};
+      resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
       // ----------------------------------------------------
-      // CONSTRUIR IMAGEN FINAL CON NOTA Y RUBRICAS (INFERIOR)
+      // DIBUJAR IMAGEN FINAL, SELLOS Y RÚBRICAS
       // ----------------------------------------------------
       let canvasF = document.getElementById('canvasFinal');
       canvasF.width = rawImg.width; canvasF.height = rawImg.height;
       let ctxF = canvasF.getContext('2d');
       ctxF.drawImage(rawImg, 0,0);
 
-      // Dibujar los Círculos en la foto
       let mInv = cv.getPerspectiveTransform(dstTri, srcTri);
       arrAns.forEach((a, r) => {
         if(a.idx >= 0) {
@@ -203,57 +235,83 @@
         }
       });
 
-      // Crear el Sello de Rúbricas (Parte Inferior Central/Derecha)
-      ctxF.fillStyle = "rgba(255,255,255,0.9)";
-      ctxF.fillRect(50, canvasF.height - 400, canvasF.width - 100, 350);
-      ctxF.lineWidth = 4; ctxF.strokeStyle = "black"; ctxF.strokeRect(50, canvasF.height - 400, canvasF.width - 100, 350);
-      
-      ctxF.fillStyle = "black"; ctxF.font = "bold 40px Arial";
-      ctxF.fillText(`📝 ALUMNO: ${curAlumno.nombre}`, 70, canvasF.height - 330);
+      // Crear el Sello Inferior con todas las rúbricas
+      let stampW = 600; 
+      let stampH = 150 + (rubricTxt.length * 32);
+      let stampX = canvasF.width - stampW - 30;
+      let stampY = canvasF.height - stampH - 30;
+
+      ctxF.fillStyle = "rgba(255,255,255,0.95)";
+      ctxF.fillRect(stampX, stampY, stampW, stampH);
+      ctxF.lineWidth = 4; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
       ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 50px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, 70, canvasF.height - 270);
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 20, stampY + 55);
       
-      ctxF.fillStyle = "black"; ctxF.font = "28px Arial";
-      let rubY = canvasF.height - 220;
-      rubricTxt.forEach((rt, i) => {
-        // Separa en 2 columnas si son muchas preguntas
-        let xPos = i < 5 ? 70 : 600;
-        let yPos = i < 5 ? rubY + (i*35) : rubY + ((i-5)*35);
-        ctxF.fillText(rt, xPos, yPos);
-      });
+      ctxF.fillStyle = "blue"; ctxF.font = "bold 26px Arial";
+      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 20, stampY + 95);
+
+      ctxF.fillStyle = "black"; ctxF.font = "bold 24px Arial";
+      ctxF.fillText("📋 DESEMPEÑO POR PREGUNTA:", stampX + 20, stampY + 140);
+      
+      let currentY = stampY + 175;
+      ctxF.font = "22px Arial";
+      for (let i=0; i<rubricTxt.length; i++) {
+          let texto = rubricTxt[i];
+          ctxF.fillStyle = texto.startsWith("✅") ? "green" : "red";
+          currentY = wrapText(ctxF, texto, stampX + 20, currentY, stampW - 40, 28) + 5;
+      }
 
       // LIMPIEZA OPENCV
       src.delete(); warped.delete(); gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // GENERAR NOMBRE: [CURSO]-[TIPO 3 DIGITOS]-[CANT P]-[NOMBRE]-[FECHA].jpg
+      // GENERAR NOMBRE: [CURSO]-[TIPO 3 DIGITOS]-[NOMBRE]-[FECHA].jpg
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let nLimpio = curAlumno.nombre.replace(/[^a-zA-Z0-9]/g, '');
-      let d = new Date(); let ts = String(d.getMinutes())+String(d.getSeconds())+String(d.getDate())+String(d.getMonth()+1)+String(d.getFullYear()).slice(-2);
-      finalName = `${curExamen.curso}-${t3}-${curExamen.cant_preguntas}P-${nLimpio}-${ts}.jpg`;
+      let d = new Date(); 
+      let m = String(d.getMinutes()).padStart(2,'0'); let s = String(d.getSeconds()).padStart(2,'0');
+      let dd = String(d.getDate()).padStart(2,'0'); let mm = String(d.getMonth()+1).padStart(2,'0'); let yy = String(d.getFullYear()).slice(-2);
       
-      finalBase64 = canvasF.toDataURL('image/jpeg', 0.9);
+      finalName = `${curExamen.curso}-${t3}-${nLimpio}-${m}${s}${dd}${mm}${yy}`;
+      
+      finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
+      let imgTag = document.getElementById('imgFinalDescarga');
+      imgTag.src = finalBase64;
+      imgTag.style.display = "block"; // Se muestra para descargar presionando el dedo
     }
 
     function descargarImg() {
-      let a = document.createElement("a"); a.href = finalBase64; a.download = finalName;
+      let a = document.createElement("a"); a.href = finalBase64; a.download = finalName + ".jpg";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       alert("Descargado como: " + finalName);
     }
 
     async function enviarSheets() {
+      document.getElementById('reviewButtons').style.display = 'none';
+      document.getElementById('loaderUpload').style.display = 'block';
+
       let p = {
         pin: document.getElementById('pin').value, idExamen: curExamen.id, curso: curExamen.curso, 
         tipo: curExamen.tipo, trimestre: curExamen.trimestre, nLista: curAlumno.n_lista, nombre: curAlumno.nombre, 
         aciertos: resData.aciertos, fallos: resData.fallos, totalPreguntas: curExamen.cant_preguntas, 
-        nota100: resData.nota, detalleRespuestas: "Eval Automatica", preguntasIncorrectas: "", fileName: finalName
+        nota100: resData.nota, detalleRespuestas: resData.detalles, preguntasIncorrectas: resData.incorrectas, fileName: finalName
       };
+      
       try {
-        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"} });
+        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"}, redirect: "follow" });
         let res = await req.json();
-        if(res.status === "success") { alert("✅ Guardado en Sheets"); switchPanel('p-config'); }
-        else throw new Error(res.message);
-      } catch(e) { alert("Error al enviar: " + e.message); }
+        if(res.status === "success") { 
+            alert("✅ Guardado en Sheets Exitosamente"); 
+            switchPanel('p-config'); 
+        } else {
+            throw new Error(res.message);
+        }
+      } catch(e) { 
+          alert("Error al enviar: " + e.message); 
+          document.getElementById('reviewButtons').style.display = 'block';
+      } finally {
+          document.getElementById('loaderUpload').style.display = 'none';
+      }
     }
   </script>
 </body>
