@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner - App Nativa</title>
+  <title>OMR Scanner - Integración 30 Columnas</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 10px; }
@@ -24,7 +24,7 @@
     #canvasFinal { width: 100%; height: auto; position: relative; object-fit: contain; display:none;}
     #imgFinalDescarga { width: 100%; height: auto; object-fit: contain; display: none; max-height: 60vh; }
     
-    #diagnosticoText { background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.7rem; padding: 10px; white-space: pre-wrap; overflow-x: auto; margin-top: 20px;}
+    #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.7rem; padding: 10px; white-space: pre-wrap; overflow-x: auto; margin-top: 20px;}
   </style>
 </head>
 <body>
@@ -38,7 +38,7 @@
     <select id="selEstudiante"><option>-- Alumno --</option></select>
     <button class="btn-green" id="btnIniciarEscaneo" onclick="abrirCamara()">📸 Tomar Foto</button>
     
-    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Datos (Diagnóstico)</button>
+    <button class="btn-orange" onclick="verDiagnostico()">🧪 Ver Diagnóstico de Red</button>
     <div id="diagnosticoText">Esperando datos...</div>
   </div>
 
@@ -72,7 +72,7 @@
       <button class="btn-green" onclick="enviarSheets()">📤 Enviar a Sheets</button>
       <button class="btn-red" onclick="switchPanel('p-config')">Volver</button>
     </div>
-    <div id="loaderUpload" style="display:none; text-align:center; color:#38bdf8; font-weight:bold;">⏳ Conectando...</div>
+    <div id="loaderUpload" style="display:none; text-align:center; color:#38bdf8; font-weight:bold;">⏳ Enviando datos a Google Sheets...</div>
   </div>
 
   <script>
@@ -92,7 +92,7 @@
 
     async function iniciar() {
       let pin = document.getElementById('pin').value;
-      document.getElementById('diagnosticoText').innerText = "Conectando con Google Sheets...";
+      document.getElementById('diagnosticoText').innerText = "Conectando...";
       document.getElementById('btnLogin').innerText = "⏳ Verificando...";
       try {
         let req = await fetch(URL_APP + "?pin=" + pin);
@@ -104,7 +104,7 @@
         
         let sel = document.getElementById('selExamen'); sel.innerHTML = "<option>-- Examen --</option>";
         examenes.forEach(e => sel.innerHTML += `<option value="${e.id}">[${e.curso}] ${e.tipo} - ${e.tema}</option>`);
-        alert("Conexión Exitosa con la Base de Datos");
+        alert("Conexión Exitosa. Matriz de 30 columnas cargada.");
       } catch(e) { 
         alert("Error: " + e.message); 
         document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;
@@ -123,7 +123,7 @@
 
     function verDiagnostico() {
       let t = document.getElementById('diagnosticoText');
-      t.style.display = t.style.display === "none" || t.style.display === "" ? "block" : "none";
+      t.style.display = (t.style.display === "none" || t.style.display === "") ? "block" : "none";
     }
 
     async function abrirCamara() {
@@ -157,7 +157,6 @@
       if(closest.d < 40) { corners[closest.idx] = {x,y}; drawCrop(); }
     });
 
-    // Función para dibujar textos largos sin salirse del cuadro
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
         var words = text.split(' '); var line = '';
         for(var n = 0; n < words.length; n++) {
@@ -181,14 +180,14 @@
       let warped = new cv.Mat();
       cv.warpPerspective(src, warped, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
 
-      // Filtro B/N Fijo para garantizar lectura
+      // Filtro B/N Fijo
       let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY);
       let bin = new cv.Mat(); cv.threshold(gray, bin, 150, 255, cv.THRESH_BINARY_INV);
       cv.imshow('bwCanvas', bin);
 
-      // Leer respuestas y enlazar con Arrays de 10 posiciones de Rúbricas
       let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = []; let detTxt = []; let incTxt = [];
       
+      // Integración a la matriz de rúbricas de 30 columnas
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
@@ -197,33 +196,30 @@
           if(pts > maxP && pts > 5) { maxP = pts; mIdx = c; }
         }
         let ans = mIdx>=0 ? ["A","B","C","D"][mIdx] : "X";
-        let esOk = (ans === curExamen.clave[r]);
-        
+        let esOk = ans === curExamen.clave[r];
         if(esOk) { 
           aciertos++; 
-          let ra = curExamen.rubA[r] && curExamen.rubA[r] !== "" ? curExamen.rubA[r] : "Correcto";
-          rubricTxt.push(`✅ P${r+1}: ${ra}`); 
+          let rbAc = (curExamen.rubA && curExamen.rubA[r]) ? curExamen.rubA[r] : "Correcto";
+          rubricTxt.push(`✅ P${r+1}: ${rbAc}`); 
         } else { 
           fallos++; 
           incTxt.push(r+1);
-          let rf = curExamen.rubF[r] && curExamen.rubF[r] !== "" ? curExamen.rubF[r] : "Revisar";
-          rubricTxt.push(`❌ P${r+1}: ${rf}`); 
+          let rbFl = (curExamen.rubF && curExamen.rubF[r]) ? curExamen.rubF[r] : "Revisar";
+          rubricTxt.push(`❌ P${r+1}: ${rbFl}`); 
         }
-        
         detTxt.push(`${r+1}:${ans}(${esOk?'OK':'❌'+curExamen.clave[r]})`);
         arrAns.push({idx: mIdx, ok: esOk});
       }
 
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
-      // ----------------------------------------------------
       // DIBUJAR IMAGEN FINAL, SELLOS Y RÚBRICAS
-      // ----------------------------------------------------
       let canvasF = document.getElementById('canvasFinal');
       canvasF.width = rawImg.width; canvasF.height = rawImg.height;
       let ctxF = canvasF.getContext('2d');
       ctxF.drawImage(rawImg, 0,0);
 
+      // Círculos de calificación
       let mInv = cv.getPerspectiveTransform(dstTri, srcTri);
       arrAns.forEach((a, r) => {
         if(a.idx >= 0) {
@@ -235,9 +231,9 @@
         }
       });
 
-      // Crear el Sello Inferior con todas las rúbricas
-      let stampW = 600; 
-      let stampH = 150 + (rubricTxt.length * 32);
+      // Crear el Sello de Rúbricas
+      let stampW = 650; 
+      let stampH = 180 + (rubricTxt.length * 35);
       let stampX = canvasF.width - stampW - 30;
       let stampY = canvasF.height - stampH - 30;
 
@@ -245,45 +241,41 @@
       ctxF.fillRect(stampX, stampY, stampW, stampH);
       ctxF.lineWidth = 4; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
+      ctxF.fillStyle = "black"; ctxF.font = "bold 40px Arial";
+      ctxF.fillText(`📝 ALUMNO: ${curAlumno.nombre}`, stampX + 20, stampY + 50);
+      
       ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 50px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 20, stampY + 55);
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 20, stampY + 110);
       
-      ctxF.fillStyle = "blue"; ctxF.font = "bold 26px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 20, stampY + 95);
+      ctxF.fillStyle = "black"; ctxF.font = "28px Arial";
+      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 300, stampY + 110);
 
-      ctxF.fillStyle = "black"; ctxF.font = "bold 24px Arial";
-      ctxF.fillText("📋 DESEMPEÑO POR PREGUNTA:", stampX + 20, stampY + 140);
-      
-      let currentY = stampY + 175;
-      ctxF.font = "22px Arial";
-      for (let i=0; i<rubricTxt.length; i++) {
-          let texto = rubricTxt[i];
-          ctxF.fillStyle = texto.startsWith("✅") ? "green" : "red";
-          currentY = wrapText(ctxF, texto, stampX + 20, currentY, stampW - 40, 28) + 5;
-      }
+      let rubY = stampY + 160;
+      rubricTxt.forEach((rt, i) => {
+        ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
+        rubY = wrapText(ctxF, rt, stampX + 20, rubY, stampW - 40, 35) + 5;
+      });
 
-      // LIMPIEZA OPENCV
       src.delete(); warped.delete(); gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // GENERAR NOMBRE: [CURSO]-[TIPO 3 DIGITOS]-[NOMBRE]-[FECHA].jpg
+      // FORMATEO ESTRICTO DEL ARCHIVO
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let nLimpio = curAlumno.nombre.replace(/[^a-zA-Z0-9]/g, '');
-      let d = new Date(); 
-      let m = String(d.getMinutes()).padStart(2,'0'); let s = String(d.getSeconds()).padStart(2,'0');
-      let dd = String(d.getDate()).padStart(2,'0'); let mm = String(d.getMonth()+1).padStart(2,'0'); let yy = String(d.getFullYear()).slice(-2);
+      let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
+      let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${nLimpio}-${m}${s}${dd}${mm}${yy}`;
+      finalName = `${curExamen.curso}-${t3}-${nLimpio}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
       let imgTag = document.getElementById('imgFinalDescarga');
       imgTag.src = finalBase64;
-      imgTag.style.display = "block"; // Se muestra para descargar presionando el dedo
+      imgTag.style.display = "block";
     }
 
     function descargarImg() {
       let a = document.createElement("a"); a.href = finalBase64; a.download = finalName + ".jpg";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      alert("Descargado como: " + finalName);
+      alert("Descargado como: " + finalName + ".jpg");
     }
 
     async function enviarSheets() {
@@ -298,14 +290,13 @@
       };
       
       try {
-        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"}, redirect: "follow" });
+        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"} });
         let res = await req.json();
         if(res.status === "success") { 
-            alert("✅ Guardado en Sheets Exitosamente"); 
+            alert("✅ Calificación enviada y registrada correctamente."); 
             switchPanel('p-config'); 
-        } else {
-            throw new Error(res.message);
         }
+        else throw new Error(res.message);
       } catch(e) { 
           alert("Error al enviar: " + e.message); 
           document.getElementById('reviewButtons').style.display = 'block';
