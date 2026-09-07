@@ -39,6 +39,9 @@
 
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
+    
+    /* LA LUPA PARA ESCANEO DE PRECISIÓN */
+    #loupe { display: none; position: absolute; border: 3px solid #10b981; border-radius: 50%; width: 120px; height: 120px; pointer-events: none; z-index: 100; box-shadow: 0 0 15px rgba(0,0,0,0.8); background: #000; }
   </style>
 </head>
 <body>
@@ -72,8 +75,11 @@
   </div>
 
   <div id="p-crop" class="panel">
-    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro a las respuestas.</div>
-    <div class="crop-stage"><canvas id="canvasCrop"></canvas></div>
+    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro a las respuestas. Mantenga presionado para ver la lupa.</div>
+    <div class="crop-stage">
+        <canvas id="canvasCrop"></canvas>
+        <canvas id="loupe"></canvas>
+    </div>
     <button class="btn-blue" onclick="procesar()">⚡ Evaluar</button>
     <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
   </div>
@@ -120,6 +126,11 @@
     let cvsMesa = document.getElementById('canvasMesa'), ctxMesa = cvsMesa.getContext('2d');
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
     let bwCanvas = document.getElementById('bwCanvas');
+    
+    // Variables de Lupa
+    let loupeTimeout = null;
+    let loupeCanvas = document.getElementById('loupe');
+    let loupeCtx = loupeCanvas.getContext('2d');
     
     let lineTop = 0, lineBot = 0, activeLine = null;
     let corners = []; let opencvReady = false;
@@ -231,27 +242,78 @@
       corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
-    // --- RECUADRO AZUL ARRASTRABLE COMPLETO ---
+    // --- RECUADRO AZUL ARRASTRABLE COMPLETO Y LUPA DE PRECISIÓN ---
     function getTouchPos(e) { let rect = cvsCrop.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
     function distToSegment(p, v, w) { let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2); if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y); let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y))); }
     function pointInPolygon(point, vs) { let x = point.x, y = point.y; let inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside; }
 
+    function updateLoupe(cx, cy) {
+      if (loupeCanvas.style.display === 'none') return;
+      loupeCanvas.style.left = (cx - 60) + 'px';
+      loupeCanvas.style.top = (cy - 140) + 'px'; // Se dibuja arriba del dedo
+      
+      loupeCtx.clearRect(0, 0, 120, 120);
+      loupeCtx.save();
+      loupeCtx.beginPath(); loupeCtx.arc(60, 60, 60, 0, Math.PI*2); loupeCtx.clip();
+      
+      let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
+      let srcW = 60 * sX; let srcH = 60 * sY;
+      let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
+      
+      loupeCtx.drawImage(mesaImg, srcX, srcY, srcW, srcH, 0, 0, 120, 120);
+      loupeCtx.strokeStyle = 'red'; loupeCtx.lineWidth = 2;
+      loupeCtx.beginPath(); loupeCtx.moveTo(60, 40); loupeCtx.lineTo(60, 80); loupeCtx.stroke();
+      loupeCtx.beginPath(); loupeCtx.moveTo(40, 60); loupeCtx.lineTo(80, 60); loupeCtx.stroke();
+      loupeCtx.restore();
+    }
+
     cvsCrop.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e); activeHandle = null;
-      for (let i=0; i<4; i++) { if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 40) { activeHandle = i; return; } }
+      // 1. Detectar Esquinas
+      for (let i=0; i<4; i++) { 
+          if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 60) { 
+              activeHandle = i; 
+              loupeTimeout = setTimeout(() => { loupeCanvas.style.display = 'block'; updateLoupe(pos.x, pos.y); }, 800);
+              return; 
+          } 
+      }
+      // 2. Detectar Bordes (Lados el doble de anchos para agarrar fácil)
+      for (let i=0; i<4; i++) { 
+          let j = (i + 1) % 4; 
+          if (distToSegment(pos, corners[i], corners[j]) < 80) { 
+              activeHandle = `edge_${i}`; dragOffset = pos; return; 
+          } 
+      }
+      // 3. Detectar Centro (Mueve toda la figura)
       if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
-      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 40) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
     });
 
     cvsCrop.addEventListener('pointermove', (e) => {
       if (activeHandle === null) return;
       let pos = getTouchPos(e); let dx = pos.x - dragOffset.x; let dy = pos.y - dragOffset.y;
-      if (typeof activeHandle === 'number') { corners[activeHandle].x = Math.max(0, Math.min(cvsCrop.width, pos.x)); corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); } 
-      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
-      else if (activeHandle.startsWith("edge_")) { let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; dragOffset = pos; }
+      
+      if (typeof activeHandle === 'number') { 
+          corners[activeHandle].x = Math.max(0, Math.min(cvsCrop.width, pos.x)); 
+          corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); 
+          if (loupeCanvas.style.display === 'block') updateLoupe(pos.x, pos.y);
+      } 
+      else if (activeHandle === "center") { 
+          corners.forEach(c => { c.x += dx; c.y += dy; }); 
+          dragOffset = pos; 
+      } 
+      else if (activeHandle.startsWith("edge_")) { 
+          let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; 
+          corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; 
+          dragOffset = pos; 
+      }
       drawCrop();
     });
-    window.addEventListener('pointerup', () => { activeHandle = null; });
+    
+    window.addEventListener('pointerup', () => { 
+        clearTimeout(loupeTimeout);
+        loupeCanvas.style.display = 'none';
+        activeHandle = null; 
+    });
 
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
@@ -342,7 +404,6 @@
         detTxt.push(`${r+1}:${ans}(${esOk?'OK':'❌'+curExamen.clave[r]})`);
         arrAns.push({idx: ["A","B","C","D"].indexOf(ans), ok: esOk});
 
-        // Generar UI Manual Editor
         let opts = ["A", "B", "C", "D"].slice(0, curExamen.opciones); opts.push("BLANCO");
         let optString = opts.map(o => `<option value="${o}" ${o===ans?'selected':''}>${o}</option>`).join("");
         let classColor = esOk ? 'c-ok' : 'c-err';
@@ -350,7 +411,6 @@
       }
 
       document.getElementById('editorFilas').innerHTML = htmlEditor;
-
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
       // DIBUJAR FINAL
@@ -375,15 +435,15 @@
         }
       });
 
-      // SELLO DINÁMICO (MITAD DE TAMAÑO Y ALINEADO DEBAJO DE LA MATRIZ A LA DERECHA)
+      // SELLO DINÁMICO REFINADO (Más angosto, empujado a la derecha, más abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
-      let stampW = 380; 
-      let stampH = 100 + (rubricTxt.length * 16);
-      let stampX = matrixRightX - stampW + 60; // Push to the right
-      if (stampX + stampW > canvasF.width - 20) stampX = canvasF.width - stampW - 20; // Bound to screen
-      let stampY = matrixBottomY + 40; 
+      let stampW = 340; 
+      let stampH = 100 + (rubricTxt.length * 18);
+      let stampX = matrixRightX - stampW + 120; // Empujado a la derecha
+      if (stampX + stampW > canvasF.width - 20) stampX = canvasF.width - stampW - 20; // Tope derecho de la pantalla
+      let stampY = matrixBottomY + 70; // Bajado 2 renglones más
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -409,21 +469,27 @@
         rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 16) + 2;
       });
 
+      // Añadir ID_Examen en la esquina inferior derecha del sello
+      ctxF.fillStyle = "#64748b"; ctxF.font = "bold 10px Arial";
+      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 80, stampY + stampH - 10);
+
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO
+      // FORMATEO ESTRICTO DEL ARCHIVO CON INICIALES DEL ESTUDIANTE
+      let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
-      
-      finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
+      finalName = `${curExamen.curso}-${t3}-${tema4}-${initials}-${ms}${fechaStr}`;
     }
 
     function descargarImg() {
-      let a = document.createElement("a"); a.href = finalBase64; a.download = finalName + ".jpg";
+      // Como el nombre NO tiene .jpg escrito en la variable, se lo añadimos al descargar
+      let canvasF = document.getElementById('canvasFinal');
+      let base64 = canvasF.toDataURL('image/jpeg', 0.85);
+      let a = document.createElement("a"); a.href = base64; a.download = finalName + ".jpg";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       alert("Descargado como: " + finalName + ".jpg");
     }
@@ -432,6 +498,7 @@
       document.getElementById('reviewButtons').style.display = 'none';
       document.getElementById('loaderUpload').style.display = 'block';
 
+      // Enviamos el finalName que no tiene la extensión, App Script le suma el .jpg en la columna URL_Drive
       let p = {
         pin: document.getElementById('pin').value, idExamen: curExamen.id, curso: curExamen.curso, 
         tipo: curExamen.tipo, trimestre: curExamen.trimestre, nLista: curAlumno.n_lista, nombre: curAlumno.nombre, 
