@@ -40,6 +40,7 @@
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
     
+    /* LUPA PARA PRECISIÓN MÓVIL */
     #loupe { display: none; position: absolute; border: 3px solid #10b981; border-radius: 50%; width: 120px; height: 120px; pointer-events: none; z-index: 100; box-shadow: 0 0 15px rgba(0,0,0,0.8); background: #000; }
   </style>
 </head>
@@ -95,7 +96,7 @@
   </div>
 
   <div id="p-crop" class="panel">
-    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro EXACTAMENTE a las esquinas del MARCO NEGRO de respuestas. (Sostenga para ver la lupa).</div>
+    <div class="instruccion" style="color:#10b981;">Ajuste las esquinas EXACTAMENTE al borde negro grueso de las burbujas (Sostenga para lupa).</div>
     <div class="crop-stage">
         <canvas id="canvasCrop"></canvas>
         <canvas id="loupe"></canvas>
@@ -187,6 +188,7 @@
       });
     }
 
+    // --- AGREGAR ESTUDIANTE EN VIVO A GOOGLE SHEETS ---
     function prepararNuevoEstudiante() {
         if(!curExamen) { alert("Primero seleccione un examen en el menú para saber a qué curso agregar al estudiante."); return; }
         let curso = curExamen.curso; let maxLista = 0;
@@ -354,7 +356,7 @@
       let src = cv.imread(mesaImg);
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
       
-      // EL MARCO NEGRO DEFINE LA ZONA EXACTA: (opciones+1)*40 px de ancho
+      // LA MAGIA DE PRECISIÓN: El marco negro de la web se divide en celdas de 40x40.
       let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
       
@@ -384,7 +386,7 @@
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
-          // El centro exacto de la burbuja está en 40 + c*40 + 20
+          // El centro exacto de la burbuja dentro del marco de 40x40
           let cx = 40 + c*40 + 20; 
           let cy = 40 + r*40 + 20;
           let roi = bin.roi(new cv.Rect(cx-9, cy-9, 18, 18));
@@ -457,15 +459,15 @@
         }
       });
 
-      // SELLO DINÁMICO (Más angosto, muy a la derecha, muy abajo)
+      // SELLO DINÁMICO (Estrecho, empujado a la derecha, muy abajo)
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
       let stampW = 280; 
       let stampH = 100 + (rubricTxt.length * 15);
       
-      let stampX = canvasF.width - stampW - 20; // Alineado totalmente a la derecha
-      let stampY = matrixBottomY + 160; // 10 veces más abajo que antes
+      let stampX = canvasF.width - stampW - 20; 
+      let stampY = matrixBottomY + 160; 
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -497,14 +499,13 @@
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
       // FORMATEO EXACTO DE ARCHIVO (Iniciales Estudiante)
-      let f = curExamen.fila.includes("A") ? "FA" : "FB";
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${f}-${t3}-${tema4}-${initials}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-${t3}-${tema4}-${initials}-${ms}${fechaStr}`;
     }
 
     function descargarImg() {
