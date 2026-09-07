@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OMR Scanner - App Móvil Estudiantes</title>
+  <title>OMR Scanner - App Móvil</title>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
   <style>
     body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 10px; touch-action: pan-y;}
@@ -40,7 +40,7 @@
     #diagnosticoText { display: none; background: #1e293b; color: #10b981; font-family: monospace; font-size: 0.75rem; padding: 12px; white-space: pre-wrap; overflow-x: auto; margin-top: 10px; border-radius: 6px;}
     .instruccion { text-align:center; font-size: 1rem; color: #94a3b8; font-weight:bold; margin-bottom:10px;}
     
-    /* LA LUPA PARA ESCANEO DE PRECISIÓN */
+    /* LUPA PARA PRECISIÓN MÓVIL */
     #loupe { display: none; position: absolute; border: 3px solid #10b981; border-radius: 50%; width: 120px; height: 120px; pointer-events: none; z-index: 100; box-shadow: 0 0 15px rgba(0,0,0,0.8); background: #000; }
   </style>
 </head>
@@ -89,14 +89,14 @@
   </div>
   
   <div id="p-crop-mesa" class="panel">
-    <div class="instruccion" style="color:#ea580c;">Arrastre las líneas para recortar el fondo.</div>
+    <div class="instruccion" style="color:#ea580c;">Arrastre las líneas para recortar el fondo de la mesa.</div>
     <div class="page-crop-stage"><canvas id="canvasMesa"></canvas></div>
     <button class="btn-orange" onclick="confirmarMesa()">✂️ Aceptar Recorte</button>
     <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
   </div>
 
   <div id="p-crop" class="panel">
-    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro a las respuestas. Mantenga presionado para ver la lupa.</div>
+    <div class="instruccion" style="color:#10b981;">Ajuste el recuadro EXACTAMENTE a las esquinas del borde negro de las respuestas. (Sostenga para ver la lupa).</div>
     <div class="crop-stage">
         <canvas id="canvasCrop"></canvas>
         <canvas id="loupe"></canvas>
@@ -105,16 +105,14 @@
     <button class="btn-red" onclick="switchPanel('p-camara')">Reintentar Foto</button>
   </div>
 
-  <!-- PANEL 3: RESULTADOS Y EDICIÓN MANUAL -->
+  <!-- PANEL 3: RESULTADOS -->
   <div id="p-resultado" class="panel">
     <div class="filter-panel">
-      <div class="filter-row"><label>Brillo</label><input type="range" id="slBrillo" min="-100" max="100" value="-25" oninput="aplicarFiltrosBinarizacion()"><span id="valBrillo">-25</span></div>
-      <div class="filter-row"><label>Contraste</label><input type="range" id="slContraste" min="10" max="40" value="24" oninput="aplicarFiltrosBinarizacion()"><span id="valContraste">2.4</span></div>
       <div class="filter-row"><label>Lápiz</label><input type="range" id="slUmbral" min="100" max="250" value="168" oninput="aplicarFiltrosBinarizacion()"><span id="valUmbral">168</span></div>
       <div class="visor-pequeno"><canvas id="bwCanvas"></canvas></div>
     </div>
     
-    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar👇</div>
+    <div class="instruccion" style="color:#10b981;">Mantenga presionado para Guardar la imagen👇</div>
     <div class="visor-final">
       <canvas id="canvasFinal"></canvas>
     </div>
@@ -148,9 +146,7 @@
     let cvsCrop = document.getElementById('canvasCrop'), ctxCrop = cvsCrop.getContext('2d');
     let bwCanvas = document.getElementById('bwCanvas');
     
-    let loupeTimeout = null;
-    let loupeCanvas = document.getElementById('loupe');
-    let loupeCtx = loupeCanvas.getContext('2d');
+    let loupeTimeout = null; let loupeCanvas = document.getElementById('loupe'); let loupeCtx = loupeCanvas.getContext('2d');
     
     let lineTop = 0, lineBot = 0, activeLine = null;
     let corners = []; let opencvReady = false;
@@ -168,18 +164,13 @@
         let res = await req.json();
         if(res.status === "error") throw new Error(res.message);
         examenes = res.examenes; alumnos = res.estudiantes;
-        
         document.getElementById('diagnosticoText').innerText = JSON.stringify(examenes[0], null, 2);
         
         let sel = document.getElementById('selExamen'); sel.innerHTML = "<option>-- Examen --</option>";
         examenes.forEach(e => sel.innerHTML += `<option value="${e.id}">[${e.curso}] ${e.tipo} - ${e.tema}</option>`);
         alert("Conexión Exitosa.");
-      } catch(e) { 
-        alert("Error: " + e.message); 
-        document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;
-      } finally {
-        document.getElementById('btnLogin').innerText = "Verificar y Cargar Datos";
-      }
+      } catch(e) { alert("Error: " + e.message); document.getElementById('diagnosticoText').innerText = "Fallo de red: " + e.message;
+      } finally { document.getElementById('btnLogin').innerText = "Verificar y Cargar Datos"; }
     }
 
     function cargarAlumnos() {
@@ -190,18 +181,15 @@
       });
     }
 
-    // --- AGREGAR ESTUDIANTE DESDE EL CELULAR ---
+    // --- AGREGAR ESTUDIANTE EN VIVO ---
     function prepararNuevoEstudiante() {
-        if(!curExamen) { alert("Primero seleccione un examen en el menú para saber a qué curso agregar al estudiante."); return; }
-        let curso = curExamen.curso;
-        let maxLista = 0;
-        alumnos.forEach(a => {
-            if(a.curso === curso && parseInt(a.n_lista) > maxLista) maxLista = parseInt(a.n_lista);
-        });
+        if(!curExamen) { alert("Primero seleccione un examen para saber a qué curso agregar al estudiante."); return; }
+        let curso = curExamen.curso; let maxLista = 0;
+        alumnos.forEach(a => { if(a.curso === curso && parseInt(a.n_lista) > maxLista) maxLista = parseInt(a.n_lista); });
         document.getElementById('addCurso').value = curso;
         document.getElementById('addNLista').value = maxLista + 1;
         document.getElementById('addNombre').value = "";
-        document.getElementById('helperLista').innerText = `El N° de Lista mayor actual en ${curso} es ${maxLista}. Se sugiere usar el N° ${maxLista + 1}.`;
+        document.getElementById('helperLista').innerText = `El N° de Lista mayor en ${curso} es ${maxLista}. Use el N° ${maxLista + 1}.`;
         switchPanel('p-add-student');
     }
 
@@ -226,25 +214,19 @@
                 cargarAlumnos();
                 switchPanel('p-config');
             } else { throw new Error(res.message); }
-        } catch(e) { 
-            alert("Error al agregar: " + e.message); 
-        } finally {
-            document.getElementById('btnSaveStudent').innerText = "Guardar Estudiante";
-        }
+        } catch(e) { alert("Error al agregar: " + e.message); 
+        } finally { document.getElementById('btnSaveStudent').innerText = "Guardar Estudiante"; }
     }
 
     function verDiagnostico() {
-      let t = document.getElementById('diagnosticoText');
-      t.style.display = (t.style.display === "none" || t.style.display === "") ? "block" : "none";
+      let t = document.getElementById('diagnosticoText'); t.style.display = (t.style.display === "none" || t.style.display === "") ? "block" : "none";
     }
 
     async function abrirCamara() {
       if(!document.getElementById('selEstudiante').value.includes("{")) { alert("Seleccione un estudiante"); return;}
       curAlumno = JSON.parse(document.getElementById('selEstudiante').value);
       switchPanel('p-camara');
-      try {
-          stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: {ideal: 1920}}});
-          video.srcObject = stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: {ideal: 1920}}}); video.srcObject = stream;
       } catch (e) { alert("Permita la cámara.");}
     }
 
@@ -252,7 +234,6 @@
       rawImg = document.createElement('canvas'); rawImg.width = video.videoWidth; rawImg.height = video.videoHeight;
       rawImg.getContext('2d').drawImage(video, 0,0);
       stream.getTracks().forEach(t=>t.stop());
-      
       switchPanel('p-crop-mesa');
       cvsMesa.width = cvsMesa.clientWidth; cvsMesa.height = cvsMesa.clientHeight;
       lineTop = cvsMesa.height * 0.05; lineBot = cvsMesa.height * 0.95;
@@ -294,7 +275,7 @@
       
       switchPanel('p-crop');
       cvsCrop.width = cvsCrop.clientWidth; cvsCrop.height = cvsCrop.clientHeight;
-      corners = [{x:cvsCrop.width*0.5, y:cvsCrop.height*0.1},{x:cvsCrop.width*0.9, y:cvsCrop.height*0.1},{x:cvsCrop.width*0.9, y:cvsCrop.height*0.9},{x:cvsCrop.width*0.5, y:cvsCrop.height*0.9}];
+      corners = [{x:cvsCrop.width*0.4, y:cvsCrop.height*0.2},{x:cvsCrop.width*0.8, y:cvsCrop.height*0.2},{x:cvsCrop.width*0.8, y:cvsCrop.height*0.8},{x:cvsCrop.width*0.4, y:cvsCrop.height*0.8}];
       drawCrop();
     }
 
@@ -306,24 +287,18 @@
       corners.forEach(c => { ctxCrop.beginPath(); ctxCrop.arc(c.x, c.y, 20, 0, 2*Math.PI); ctxCrop.fillStyle="blue"; ctxCrop.fill();});
     }
 
-    // --- RECUADRO AZUL ARRASTRABLE COMPLETO Y LUPA DE PRECISIÓN ---
+    // --- RECUADRO AZUL LÓGICA DE MOVIMIENTO ---
     function getTouchPos(e) { let rect = cvsCrop.getBoundingClientRect(); let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY; return { x: cx - rect.left, y: cy - rect.top }; }
     function distToSegment(p, v, w) { let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2); if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y); let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y))); }
     function pointInPolygon(point, vs) { let x = point.x, y = point.y; let inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i].x, yi = vs[i].y; let xj = vs[j].x, yj = vs[j].y; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside; }
 
     function updateLoupe(cx, cy) {
       if (loupeCanvas.style.display === 'none') return;
-      loupeCanvas.style.left = (cx - 60) + 'px';
-      loupeCanvas.style.top = (cy - 140) + 'px'; 
-      
-      loupeCtx.clearRect(0, 0, 120, 120);
-      loupeCtx.save();
+      loupeCanvas.style.left = (cx - 60) + 'px'; loupeCanvas.style.top = (cy - 140) + 'px'; 
+      loupeCtx.clearRect(0, 0, 120, 120); loupeCtx.save();
       loupeCtx.beginPath(); loupeCtx.arc(60, 60, 60, 0, Math.PI*2); loupeCtx.clip();
-      
       let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
-      let srcW = 60 * sX; let srcH = 60 * sY;
-      let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
-      
+      let srcW = 60 * sX; let srcH = 60 * sY; let srcX = cx * sX - srcW/2; let srcY = cy * sY - srcH/2;
       loupeCtx.drawImage(mesaImg, srcX, srcY, srcW, srcH, 0, 0, 120, 120);
       loupeCtx.strokeStyle = 'red'; loupeCtx.lineWidth = 2;
       loupeCtx.beginPath(); loupeCtx.moveTo(60, 40); loupeCtx.lineTo(60, 80); loupeCtx.stroke();
@@ -333,7 +308,6 @@
 
     cvsCrop.addEventListener('pointerdown', (e) => {
       let pos = getTouchPos(e); activeHandle = null;
-      // 1. Detectar Esquinas (Activa Lupa)
       for (let i=0; i<4; i++) { 
           if (Math.hypot(corners[i].x - pos.x, corners[i].y - pos.y) < 60) { 
               activeHandle = i; 
@@ -341,14 +315,7 @@
               return; 
           } 
       }
-      // 2. Detectar Bordes Laterales (Más anchos para arrastrar mejor)
-      for (let i=0; i<4; i++) { 
-          let j = (i + 1) % 4; 
-          if (distToSegment(pos, corners[i], corners[j]) < 80) { 
-              activeHandle = `edge_${i}`; dragOffset = pos; return; 
-          } 
-      }
-      // 3. Detectar Centro (Mueve todo el cuadro)
+      for (let i=0; i<4; i++) { let j = (i + 1) % 4; if (distToSegment(pos, corners[i], corners[j]) < 80) { activeHandle = `edge_${i}`; dragOffset = pos; return; } }
       if (pointInPolygon(pos, corners)) { activeHandle = "center"; dragOffset = pos; return; }
     });
 
@@ -361,10 +328,7 @@
           corners[activeHandle].y = Math.max(0, Math.min(cvsCrop.height, pos.y)); 
           if (loupeCanvas.style.display === 'block') updateLoupe(pos.x, pos.y);
       } 
-      else if (activeHandle === "center") { 
-          corners.forEach(c => { c.x += dx; c.y += dy; }); 
-          dragOffset = pos; 
-      } 
+      else if (activeHandle === "center") { corners.forEach(c => { c.x += dx; c.y += dy; }); dragOffset = pos; } 
       else if (activeHandle.startsWith("edge_")) { 
           let edgeIdx = parseInt(activeHandle.split("_")[1]); let nextIdx = (edgeIdx + 1) % 4; 
           corners[edgeIdx].x += dx; corners[edgeIdx].y += dy; corners[nextIdx].x += dx; corners[nextIdx].y += dy; 
@@ -372,13 +336,7 @@
       }
       drawCrop();
     });
-    
-    window.addEventListener('pointerup', () => { 
-        clearTimeout(loupeTimeout);
-        loupeCanvas.style.display = 'none';
-        activeHandle = null; 
-    });
-
+    window.addEventListener('pointerup', () => { clearTimeout(loupeTimeout); loupeCanvas.style.display = 'none'; activeHandle = null; });
 
     function wrapText(context, text, x, y, maxWidth, lineHeight) {
         var words = text.split(' '); var line = '';
@@ -400,8 +358,11 @@
       let src = cv.imread(mesaImg);
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
       
-      let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
+      // MATEMÁTICA EXACTA: Cada celda de burbuja es 40x40 px exactos.
+      let tW = 40 + (curExamen.opciones) * 40; 
+      let tH = 40 + (curExamen.cant_preguntas) * 40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
+      
       if(warpedMatBase) warpedMatBase.delete();
       warpedMatBase = new cv.Mat();
       cv.warpPerspective(src, warpedMatBase, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
@@ -411,24 +372,21 @@
     }
 
     function aplicarFiltrosBinarizacion() {
-      let valB = parseInt(document.getElementById('slBrillo').value); 
-      let valC = parseInt(document.getElementById('slContraste').value) / 10; 
       let valU = parseInt(document.getElementById('slUmbral').value);
-      
-      document.getElementById('valBrillo').innerText = valB; 
-      document.getElementById('valContraste').innerText = valC.toFixed(1); 
       document.getElementById('valUmbral').innerText = valU;
 
       let gray = new cv.Mat(); cv.cvtColor(warpedMatBase, gray, cv.COLOR_RGBA2GRAY);
-      let adjusted = new cv.Mat(); gray.convertTo(adjusted, -1, valC, valB);
-      let bin = new cv.Mat(); cv.threshold(adjusted, bin, valU, 255, cv.THRESH_BINARY_INV);
+      let bin = new cv.Mat(); cv.threshold(gray, bin, valU, 255, cv.THRESH_BINARY_INV);
       cv.imshow('bwCanvas', bin);
 
       arregloRespuestasManuales = [];
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
-          let roi = bin.roi(new cv.Rect((c+1)*40+15, (r+1)*40+15, 10, 10));
+          // El centro exacto de la burbuja en OpenCV
+          let cx = 40 + c*40 + 20; 
+          let cy = 40 + r*40 + 20;
+          let roi = bin.roi(new cv.Rect(cx-8, cy-8, 16, 16));
           let pts = cv.countNonZero(roi); roi.delete();
           if(pts > maxP && pts > 5) { maxP = pts; mIdx = c; }
         }
@@ -436,7 +394,7 @@
         arregloRespuestasManuales.push(ans);
       }
 
-      gray.delete(); adjusted.delete(); bin.delete();
+      gray.delete(); bin.delete();
       renderizarResultadosYEditor();
     }
 
@@ -447,7 +405,6 @@
 
     function renderizarResultadosYEditor() {
       let aciertos = 0; let fallos = 0; let rubricTxt = []; let detTxt = []; let incTxt = []; let htmlEditor = "";
-      
       let arrAns = [];
 
       for(let r=0; r<curExamen.cant_preguntas; r++) {
@@ -475,7 +432,6 @@
       }
 
       document.getElementById('editorFilas').innerHTML = htmlEditor;
-
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
       // DIBUJAR FINAL
@@ -486,13 +442,14 @@
 
       let sX = mesaImg.width / cvsCrop.width; let sY = mesaImg.height / cvsCrop.height;
       let srcTri = cv.matFromArray(4,1, cv.CV_32FC2, [corners[0].x*sX, corners[0].y*sY, corners[1].x*sX, corners[1].y*sY, corners[2].x*sX, corners[2].y*sY, corners[3].x*sX, corners[3].y*sY]);
-      let tW = (curExamen.opciones+1)*40; let tH = (curExamen.cant_preguntas+1)*40;
+      let tW = 40 + (curExamen.opciones)*40; let tH = 40 + (curExamen.cant_preguntas)*40;
       let dstTri = cv.matFromArray(4,1, cv.CV_32FC2, [0,0, tW,0, tW,tH, 0,tH]);
       let mInv = cv.getPerspectiveTransform(dstTri, srcTri);
 
       arrAns.forEach((a, r) => {
         if(a.idx >= 0) {
-          let pt = cv.matFromArray(1,1, cv.CV_32FC2, [(a.idx+1)*40+20, (r+1)*40+20]);
+          let cx = 40 + a.idx*40 + 20; let cy = 40 + r*40 + 20;
+          let pt = cv.matFromArray(1,1, cv.CV_32FC2, [cx, cy]);
           let out = new cv.Mat(); cv.perspectiveTransform(pt, out, mInv);
           ctxF.beginPath(); ctxF.arc(out.data32F[0], out.data32F[1], 15, 0, 2*Math.PI);
           ctxF.lineWidth=6; ctxF.strokeStyle = a.ok ? "green" : "red"; ctxF.stroke();
@@ -500,15 +457,15 @@
         }
       });
 
-      // SELLO DINÁMICO (Estrecho, empujado a la derecha, 10 veces más abajo)
+      // SELLO ESTRECHO ALINEADO ABAJO A LA DERECHA
       let matrixRightX = Math.max(corners[1].x, corners[2].x) * sX;
       let matrixBottomY = Math.max(corners[2].y, corners[3].y) * sY;
       
-      let stampW = 280; 
-      let stampH = 120 + (rubricTxt.length * 18);
+      let stampW = 280; // Más angosto
+      let stampH = 100 + (rubricTxt.length * 15);
       
-      let stampX = canvasF.width - stampW - 30; // Totalmente a la derecha
-      let stampY = matrixBottomY + 140; // 10 veces más abajo (140px de separación)
+      let stampX = canvasF.width - stampW - 20; // 100% pegado al margen derecho
+      let stampY = matrixBottomY + 80; // Mucho más abajo de la matriz
       
       if(stampX < 20) stampX = 20;
       if(stampY + stampH > canvasF.height - 20) stampY = canvasF.height - stampH - 20;
@@ -517,30 +474,29 @@
       ctxF.fillRect(stampX, stampY, stampW, stampH);
       ctxF.lineWidth = 3; ctxF.strokeStyle = "black"; ctxF.strokeRect(stampX, stampY, stampW, stampH);
       
-      ctxF.fillStyle = "black"; ctxF.font = "bold 14px Arial";
-      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 15, stampY + 25);
-      ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 15, stampY + 45);
+      ctxF.fillStyle = "black"; ctxF.font = "bold 13px Arial";
+      ctxF.fillText(`📝 ESTUDIANTE: ${curAlumno.nombre}`, stampX + 10, stampY + 22);
+      ctxF.fillText(`📚 CURSO: ${curExamen.curso}`, stampX + 10, stampY + 40);
       
       ctxF.fillStyle = resData.nota > 50 ? "green" : "red"; ctxF.font = "bold 20px Arial";
-      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 15, stampY + 75);
+      ctxF.fillText(`NOTA: ${resData.nota}/100`, stampX + 10, stampY + 65);
       
       ctxF.fillStyle = "black"; ctxF.font = "12px Arial";
-      ctxF.fillText(`(${aciertos} aciertos, ${fallos} fallos)`, stampX + 140, stampY + 75);
+      ctxF.fillText(`(${aciertos} bien, ${fallos} mal)`, stampX + 140, stampY + 65);
 
-      let rubY = stampY + 105;
-      ctxF.font = "12px Arial";
+      let rubY = stampY + 90;
+      ctxF.font = "11px Arial";
       rubricTxt.forEach((rt) => {
         ctxF.fillStyle = rt.startsWith("✅") ? "green" : "red";
-        rubY = wrapText(ctxF, rt, stampX + 15, rubY, stampW - 25, 16) + 2;
+        rubY = wrapText(ctxF, rt, stampX + 10, rubY, stampW - 15, 14) + 2;
       });
 
-      // Código de Examen abajo a la derecha del sello
-      ctxF.fillStyle = "#64748b"; ctxF.font = "bold 10px Arial";
-      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 70, stampY + stampH - 8);
+      ctxF.fillStyle = "#64748b"; ctxF.font = "bold 9px Arial";
+      ctxF.fillText(`ID: ${curExamen.id}`, stampX + stampW - 70, stampY + stampH - 6);
 
       mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO EXACTO DE ARCHIVO: [CURSO]-[TIPO]-[TEMA]-[INICIALES]-[MS][FECHA]
+      // FORMATEO EXACTO: [CURSO]-[TIPO]-[TEMA]-[INICIALES]-[FECHA].jpg
       let initials = curAlumno.nombre.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
       let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
@@ -551,7 +507,6 @@
     }
 
     function descargarImg() {
-      // Chrome Android necesita este truco para descargar bien desde un canvas
       let canvasF = document.getElementById('canvasFinal');
       let base64 = canvasF.toDataURL('image/jpeg', 0.85);
       let a = document.createElement("a"); a.href = base64; a.download = finalName + ".jpg";
