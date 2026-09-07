@@ -16,7 +16,6 @@
     .camera-wrapper, .crop-stage { width: 100%; aspect-ratio: 8.5/11; background: #000; margin-bottom: 10px; position: relative; border: 2px solid #3b82f6; border-radius: 6px; overflow: hidden;}
     video, canvas { width: 100%; height: 100%; position: absolute; top:0; left:0; object-fit: cover; }
     
-    /* VISTAS DE IMAGEN */
     .visor-pequeno { width: 100%; height: 120px; border: 2px solid #ea580c; background: #000; margin-bottom: 10px; position: relative;}
     #bwCanvas { width: 100%; height: 100%; object-fit: contain; }
     
@@ -180,14 +179,12 @@
       let warped = new cv.Mat();
       cv.warpPerspective(src, warped, cv.getPerspectiveTransform(srcTri, dstTri), new cv.Size(tW, tH));
 
-      // Filtro B/N Fijo
       let gray = new cv.Mat(); cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY);
       let bin = new cv.Mat(); cv.threshold(gray, bin, 150, 255, cv.THRESH_BINARY_INV);
       cv.imshow('bwCanvas', bin);
 
       let aciertos = 0; let fallos = 0; let arrAns = []; let rubricTxt = []; let detTxt = []; let incTxt = [];
       
-      // Integración a la matriz de rúbricas de 30 columnas
       for(let r=0; r<curExamen.cant_preguntas; r++) {
         let maxP = 0, mIdx = -1;
         for(let c=0; c<curExamen.opciones; c++) {
@@ -213,13 +210,11 @@
 
       resData = {aciertos:aciertos, fallos:fallos, nota: Math.round((aciertos/curExamen.cant_preguntas)*100), detalles: detTxt.join(", "), incorrectas: incTxt.join(", ")};
 
-      // DIBUJAR IMAGEN FINAL, SELLOS Y RÚBRICAS
       let canvasF = document.getElementById('canvasFinal');
       canvasF.width = rawImg.width; canvasF.height = rawImg.height;
       let ctxF = canvasF.getContext('2d');
       ctxF.drawImage(rawImg, 0,0);
 
-      // Círculos de calificación
       let mInv = cv.getPerspectiveTransform(dstTri, srcTri);
       arrAns.forEach((a, r) => {
         if(a.idx >= 0) {
@@ -231,7 +226,6 @@
         }
       });
 
-      // Crear el Sello de Rúbricas
       let stampW = 650; 
       let stampH = 180 + (rubricTxt.length * 35);
       let stampX = canvasF.width - stampW - 30;
@@ -258,13 +252,13 @@
 
       src.delete(); warped.delete(); gray.delete(); bin.delete(); mInv.delete(); srcTri.delete(); dstTri.delete();
       
-      // FORMATEO ESTRICTO DEL ARCHIVO
+      // FORMATEO ESTRICTO DEL ARCHIVO: [CURSO]-[TIPO 3 DIGITOS]-[TEMA 4 DIGITOS]-[MINUTO][SEGUNDO][FECHA]
       let t3 = curExamen.tipo.substring(0,3).toUpperCase();
-      let nLimpio = curAlumno.nombre.replace(/[^a-zA-Z0-9]/g, '');
+      let tema4 = curExamen.tema.replace(/[^a-zA-Z0-9]/g, '').substring(0,4).toUpperCase();
       let d = new Date(); let ms = String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
       let fechaStr = String(d.getDate()).padStart(2,'0') + String(d.getMonth()+1).padStart(2,'0') + String(d.getFullYear()).slice(-2);
       
-      finalName = `${curExamen.curso}-${t3}-${nLimpio}-${ms}${fechaStr}`;
+      finalName = `${curExamen.curso}-${t3}-${tema4}-${ms}${fechaStr}`;
       
       finalBase64 = canvasF.toDataURL('image/jpeg', 0.85);
       let imgTag = document.getElementById('imgFinalDescarga');
@@ -290,7 +284,7 @@
       };
       
       try {
-        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"} });
+        let req = await fetch(URL_APP, { method: "POST", body: JSON.stringify(p), headers: {"Content-Type": "text/plain"}, redirect: "follow" });
         let res = await req.json();
         if(res.status === "success") { 
             alert("✅ Calificación enviada y registrada correctamente."); 
